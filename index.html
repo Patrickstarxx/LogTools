@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PX4 双机 ULog 三维轨迹查看器</title>
+    <link rel="stylesheet" href="assets/app.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">PX4 LogTools</p>
+          <h1>双机 ULog 三维轨迹查看器</h1>
+          <p class="hero-copy">
+            直接在浏览器中读取两份 PX4 <code>.ulg</code> 日志，选择本地坐标或全球坐标，
+            绘制两架无人机的三维轨迹。日志不会上传，所有解析都在本机完成。
+          </p>
+        </div>
+        <div class="privacy-pill">本地解析 · 无需上传</div>
+      </section>
+
+      <section class="panel controls-panel" aria-labelledby="controls-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="controls-title">输入日志</h2>
+            <p>请选择两份 PX4 ULog 文件，然后选择坐标模式绘图。</p>
+          </div>
+          <div class="actions">
+            <button id="drawButton" type="button" class="primary-button">解析并绘制</button>
+            <button id="clearButton" type="button" class="secondary-button">清空</button>
+          </div>
+        </div>
+
+        <div class="controls-grid">
+          <label class="file-picker">
+            <span>无人机 A 日志</span>
+            <input id="fileA" type="file" accept=".ulg,application/octet-stream">
+          </label>
+          <label class="file-picker">
+            <span>无人机 B 日志</span>
+            <input id="fileB" type="file" accept=".ulg,application/octet-stream">
+          </label>
+          <label class="select-field">
+            <span>坐标模式</span>
+            <select id="coordinateMode">
+              <option value="local">本地坐标：vehicle_local_position</option>
+              <option value="global">全球坐标：vehicle_global_position</option>
+            </select>
+          </label>
+          <label class="select-field">
+            <span>视线角度（deg）</span>
+            <input id="sightlineAngle" type="number" value="0" step="1">
+          </label>
+          <label class="select-field">
+            <span>视线长度（m）</span>
+            <input id="sightlineLength" type="number" value="5" step="0.5" min="0">
+          </label>
+        </div>
+      </section>
+
+      <section class="status-grid" aria-label="日志状态">
+        <article class="status-card" id="statusA">
+          <h2>无人机 A</h2>
+          <p class="muted">尚未选择日志。</p>
+        </article>
+        <article class="status-card" id="statusB">
+          <h2>无人机 B</h2>
+          <p class="muted">尚未选择日志。</p>
+        </article>
+      </section>
+
+      <section class="panel viewer-panel" aria-labelledby="viewer-title">
+        <div class="panel-heading viewer-heading">
+          <div>
+            <h2 id="viewer-title">三维轨迹</h2>
+            <p id="viewerSubtitle">左键按住拖拽平移，右键按住拖拽旋转，滚轮缩放，移动鼠标查看最近轨迹点。</p>
+          </div>
+          <div class="legend" aria-label="轨迹图例">
+            <span><i class="legend-dot drone-a"></i>无人机 A</span>
+            <span><i class="legend-dot drone-b"></i>无人机 B</span>
+          </div>
+        </div>
+        <div class="canvas-frame">
+          <canvas id="trajectoryCanvas" width="1200" height="720">
+            当前浏览器不支持 Canvas，无法显示三维轨迹。
+          </canvas>
+          <div id="emptyState" class="empty-state">选择两份日志后点击“解析并绘制”。</div>
+        </div>
+        <div class="timeline-panel">
+          <div class="timeline-header">
+            <span>时间轴</span>
+            <output id="timeLabel">—</output>
+          </div>
+          <input id="timeSlider" type="range" min="0" max="0" step="0.001" value="0" disabled>
+          <p id="timelineHint">加载日志后可拖动时间轴，轨迹会随当前时间逐步绘制。</p>
+        </div>
+        <p id="hoverReadout" class="hover-readout">悬停轨迹点可查看时间与坐标。</p>
+      </section>
+
+      <section class="note">
+        <h2>坐标约定</h2>
+        <p>
+          本地坐标使用 PX4 NED 中的 <code>x/y/z</code>，绘图时将 <code>-z</code> 作为向上的高度。
+          全球坐标会以两份日志中最早的可用 GPS 点为原点，转换为 East / North / Up 米制坐标。
+        </p>
+      </section>
+    </main>
+
+    <script src="assets/trajectory.js"></script>
+    <script src="assets/ulog-parser.js"></script>
+    <script src="assets/viewer3d.js"></script>
+    <script src="assets/app.js"></script>
+  </body>
+</html>
