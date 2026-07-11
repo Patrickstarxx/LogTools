@@ -323,8 +323,6 @@
           end: points[index].projected,
           color,
           lineWidth: 3,
-          glowColor: color,
-          glowBlur: 12,
         });
       }
 
@@ -464,8 +462,6 @@
       this.ctx.lineWidth = renderable.lineWidth || 2;
       this.ctx.lineJoin = 'round';
       this.ctx.lineCap = 'round';
-      this.ctx.shadowColor = renderable.glowColor || 'transparent';
-      this.ctx.shadowBlur = renderable.glowBlur || 0;
       this.ctx.beginPath();
       this.ctx.moveTo(renderable.start.x, renderable.start.y);
       this.ctx.lineTo(renderable.end.x, renderable.end.y);
