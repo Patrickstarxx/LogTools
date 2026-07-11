@@ -33,11 +33,6 @@
 - 右键按住拖拽：旋转
 - 滚轮：以鼠标所在位置为中心缩放
 
-其中：
-
-- 右键旋转中心取“按下右键瞬间的鼠标位置”
-- 缩放中心取“当前鼠标所在位置”
-
 ## 姿态与视线显示
 
 在当前时间点，会为无人机 A 显示机体 FRD 坐标轴：
@@ -73,15 +68,13 @@
 ### 机体姿态
 
 - 机体姿态由日志中的 `vehicle_attitude` 读取
-- 机体坐标轴方向基于日志数据确定，不靠手工猜测
+- 机体坐标轴方向基于日志数据确定
 
 ## 支持的 ULog topic
 
 - `vehicle_local_position`
 - `vehicle_global_position`
 - `vehicle_attitude`
-
-当前工具聚焦三维轨迹、时间轴姿态和视线可视化，不替代完整的 PX4 Flight Review。
 
 ## 本地运行
 
@@ -120,25 +113,4 @@ LogTools/
 └─ ulogs/
 ```
 
-## 本地测试
 
-如果需要运行测试，请使用 Node.js：
-
-```powershell
-node --test tests/*.test.js
-```
-
-## 分享给别人时需要哪些文件
-
-如果只是让别人在线使用，直接分享下面这个链接即可：
-
-[https://patrickstarxx.github.io/LogTools/](https://patrickstarxx.github.io/LogTools/)
-
-如果要离线分发给别人，本项目至少需要这些文件：
-
-- `index.html`
-- `assets/` 目录
-
-如果还希望一起附带示例日志，再额外包含：
-
-- `ulogs/` 目录
