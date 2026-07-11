@@ -31,6 +31,8 @@
       this.currentMarkers = [];
       this.bodyAxes = [];
       this.projectedPoints = [];
+      this.sceneCache = null;
+      this.renderQueued = false;
       this.currentMarkers = [];
       this.bodyAxes = [];
       this.axisLabels = { x: 'X', y: 'Y', z: '高度' };
@@ -51,11 +53,12 @@
         this.panX = 0;
         this.panY = 0;
       }
+      this.invalidateSceneCache();
       this.projectedPoints = [];
       if (this.emptyState) {
         this.emptyState.classList.toggle('hidden', this.tracks.length > 0);
       }
-      this.render();
+      this.requestRender();
     }
 
     clear() {
@@ -66,13 +69,14 @@
       this.panY = 0;
       this.currentMarkers = [];
       this.bodyAxes = [];
+      this.invalidateSceneCache();
       if (this.emptyState) {
         this.emptyState.classList.remove('hidden');
       }
       if (this.readout) {
         this.readout.textContent = '悬停轨迹点可查看时间与坐标。';
       }
-      this.render();
+      this.requestRender();
     }
 
     resize() {
@@ -83,7 +87,8 @@
       this.canvas.width = Math.floor(width * this.pixelRatio);
       this.canvas.height = Math.floor(height * this.pixelRatio);
       this.ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
-      this.render();
+      this.invalidateSceneCache();
+      this.requestRender();
     }
 
     bindEvents() {
@@ -109,7 +114,8 @@
             bounds: this.bounds,
             size: this.getViewportSize(),
           });
-          this.render();
+          this.invalidateSceneCache();
+          this.requestRender();
         } else {
           this.updateHover(event);
         }
@@ -146,8 +152,27 @@
           x: event.clientX - rect.left,
           y: event.clientY - rect.top,
         }, scale, this.bounds, this.getViewportSize());
-        this.render();
+        this.invalidateSceneCache();
+        this.requestRender();
       }, { passive: false });
+    }
+
+    invalidateSceneCache() {
+      this.sceneCache = null;
+    }
+
+    requestRender() {
+      if (this.renderQueued) {
+        return;
+      }
+      this.renderQueued = true;
+      const schedule = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (callback) => setTimeout(callback, 16);
+      schedule(() => {
+        this.renderQueued = false;
+        this.render();
+      });
     }
 
     getViewportSize() {
@@ -170,17 +195,15 @@
       }
 
       this.drawAxes(width, height);
-      const sortedTracks = [...this.tracks].sort((a, b) => (a.depth || 0) - (b.depth || 0));
-      for (const track of sortedTracks) {
-        this.drawTrack(track, width, height);
-      }
-      this.drawBodyAxes(width, height);
-      this.drawCurrentMarkers(width, height);
+      const scene = this.sceneCache || this.buildScene(width, height);
+      this.sceneCache = scene;
+      this.drawScene(scene);
     }
 
     setOverlays(currentMarkers = [], bodyAxes = null) {
       setOverlayState(this, currentMarkers, bodyAxes);
-      this.render();
+      this.invalidateSceneCache();
+      this.requestRender();
     }
 
     drawBackground(width, height) {
@@ -234,37 +257,47 @@
       this.ctx.restore();
     }
 
-    drawTrack(track, width, height) {
-      const points = track.points.map((point) => ({
-        source: point,
-        projected: this.projectPoint(point, width, height),
-      }));
-      if (points.length === 0) {
-        return;
+    buildScene(width, height) {
+      const renderables = [];
+      const labels = [];
+
+      for (const track of this.tracks) {
+        const projectedTrack = this.buildProjectedTrack(track, width, height);
+        if (projectedTrack.points.length === 0) {
+          continue;
+        }
+        this.collectTrackHoverPoints(projectedTrack);
+        const trackScene = this.buildTrackScene(projectedTrack);
+        renderables.push(...trackScene.renderables);
+        labels.push(...trackScene.labels);
       }
 
-      this.ctx.save();
-      this.ctx.lineWidth = 3;
-      this.ctx.lineJoin = 'round';
-      this.ctx.lineCap = 'round';
-      this.ctx.strokeStyle = track.color || '#38bdf8';
-      this.ctx.shadowColor = track.color || '#38bdf8';
-      this.ctx.shadowBlur = 12;
-      this.ctx.beginPath();
-      points.forEach((point, index) => {
-        if (index === 0) {
-          this.ctx.moveTo(point.projected.x, point.projected.y);
-        } else {
-          this.ctx.lineTo(point.projected.x, point.projected.y);
-        }
-      });
-      this.ctx.stroke();
-      this.ctx.shadowBlur = 0;
-      this.ctx.restore();
+      const bodyAxesScene = this.buildBodyAxesScene(width, height);
+      renderables.push(...bodyAxesScene.renderables);
+      labels.push(...bodyAxesScene.labels);
 
-      this.drawMarker(points[0].projected, track.color || '#38bdf8', '起');
-      this.drawMarker(points[points.length - 1].projected, track.color || '#38bdf8', '终');
+      const markerScene = this.buildCurrentMarkerScene(width, height);
+      renderables.push(...markerScene.renderables);
+      labels.push(...markerScene.labels);
 
+      return {
+        renderables: sortSceneDrawables(renderables),
+        labels: sortSceneDrawables(labels),
+      };
+    }
+
+    buildProjectedTrack(track, width, height) {
+      return {
+        track,
+        points: track.points.map((point) => ({
+          source: point,
+          projected: this.projectPoint(point, width, height),
+        })),
+      };
+    }
+
+    collectTrackHoverPoints(projectedTrack) {
+      const { track, points } = projectedTrack;
       for (let index = 0; index < points.length; index += Math.max(1, Math.floor(points.length / 500))) {
         this.projectedPoints.push({
           track,
@@ -273,73 +306,191 @@
           y: points[index].projected.y,
         });
       }
+    }
+
+    buildTrackScene(projectedTrack) {
+      const { track, points } = projectedTrack;
+      const color = track.color || '#38bdf8';
+      const renderables = [];
+      const labels = [];
+
+      for (let index = 1; index < points.length; index += 1) {
+        renderables.push({
+          kind: 'line',
+          layer: 10,
+          depth: averageDepth(points[index - 1].projected, points[index].projected),
+          start: points[index - 1].projected,
+          end: points[index].projected,
+          color,
+          lineWidth: 3,
+        });
+      }
+
+      const first = points[0].projected;
       const last = points[points.length - 1].projected;
-      this.ctx.save();
-      this.ctx.fillStyle = track.color || '#38bdf8';
-      this.ctx.font = '600 14px "Microsoft YaHei UI", sans-serif';
-      this.ctx.fillText(track.name || '轨迹', last.x + 10, last.y + 4);
-      this.ctx.restore();
+      renderables.push(createPointRenderable(first, {
+        depth: first.depth,
+        layer: 20,
+        radius: 6,
+        fillStyle: color,
+        strokeStyle: 'rgba(255,255,255,0.9)',
+        lineWidth: 2,
+      }));
+      labels.push(createLabelRenderable(first, {
+        text: '起',
+        color: 'rgba(229, 231, 235, 0.95)',
+        font: '12px "Microsoft YaHei UI", sans-serif',
+        dx: 8,
+        dy: -8,
+        depth: first.depth,
+        layer: 50,
+      }));
+
+      renderables.push(createPointRenderable(last, {
+        depth: last.depth,
+        layer: 21,
+        radius: 6,
+        fillStyle: color,
+        strokeStyle: 'rgba(255,255,255,0.9)',
+        lineWidth: 2,
+      }));
+      labels.push(createLabelRenderable(last, {
+        text: '终',
+        color: 'rgba(229, 231, 235, 0.95)',
+        font: '12px "Microsoft YaHei UI", sans-serif',
+        dx: 8,
+        dy: -8,
+        depth: last.depth,
+        layer: 51,
+      }));
+      labels.push(createLabelRenderable(last, {
+        text: track.name || '轨迹',
+        color,
+        font: '600 14px "Microsoft YaHei UI", sans-serif',
+        dx: 10,
+        dy: 4,
+        depth: last.depth,
+        layer: 60,
+      }));
+
+      return { renderables, labels };
     }
 
-    drawMarker(point, color, label) {
-      this.ctx.save();
-      this.ctx.fillStyle = color;
-      this.ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.stroke();
-      this.ctx.fillStyle = 'rgba(229, 231, 235, 0.95)';
-      this.ctx.font = '12px "Microsoft YaHei UI", sans-serif';
-      this.ctx.fillText(label, point.x + 8, point.y - 8);
-      this.ctx.restore();
+    buildBodyAxesScene(width, height) {
+      const renderables = [];
+      const labels = [];
+      for (const axis of this.bodyAxes) {
+        const start = this.projectPoint(axis.start, width, height);
+        const end = this.projectPoint(axis.end, width, height);
+        renderables.push({
+          kind: 'line',
+          layer: 30,
+          depth: averageDepth(start, end),
+          start,
+          end,
+          color: axis.color,
+          lineWidth: axis.lineWidth || 3,
+        });
+        if (axis.showEndpoint !== false) {
+          renderables.push(createPointRenderable(end, {
+            depth: end.depth,
+            layer: 31,
+            radius: 4,
+            fillStyle: axis.color,
+          }));
+        }
+        if (axis.showLabel !== false) {
+          labels.push(createLabelRenderable(end, {
+            text: axis.label,
+            color: axis.color,
+            font: '700 13px "Microsoft YaHei UI", sans-serif',
+            dx: 6,
+            dy: -6,
+            depth: end.depth,
+            layer: 70,
+          }));
+        }
+      }
+      return { renderables, labels };
     }
 
-    drawCurrentMarkers(width, height) {
+    buildCurrentMarkerScene(width, height) {
+      const renderables = [];
+      const labels = [];
       for (const marker of this.currentMarkers) {
         if (!marker.point) {
           continue;
         }
         const projected = this.projectPoint(marker.point, width, height);
-        this.ctx.save();
-        this.ctx.fillStyle = marker.color || '#e5e7eb';
-        this.ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        this.ctx.arc(projected.x, projected.y, 8, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-        this.ctx.fillStyle = 'rgba(229, 231, 235, 0.95)';
-        this.ctx.font = '12px "Microsoft YaHei UI", sans-serif';
-        this.ctx.fillText(marker.name || '当前点', projected.x + 10, projected.y + 4);
-        this.ctx.restore();
+        renderables.push(createPointRenderable(projected, {
+          depth: projected.depth,
+          layer: 40,
+          radius: 8,
+          fillStyle: marker.color || '#e5e7eb',
+          strokeStyle: 'rgba(255,255,255,0.95)',
+          lineWidth: 2,
+        }));
+        labels.push(createLabelRenderable(projected, {
+          text: marker.name || '当前点',
+          color: 'rgba(229, 231, 235, 0.95)',
+          font: '12px "Microsoft YaHei UI", sans-serif',
+          dx: 10,
+          dy: 4,
+          depth: projected.depth,
+          layer: 80,
+        }));
+      }
+      return { renderables, labels };
+    }
+
+    drawScene(scene) {
+      for (const renderable of scene.renderables) {
+        if (renderable.kind === 'line') {
+          this.drawLineRenderable(renderable);
+        } else if (renderable.kind === 'point') {
+          this.drawPointRenderable(renderable);
+        }
+      }
+      for (const label of scene.labels) {
+        this.drawLabelRenderable(label);
       }
     }
 
-    drawBodyAxes(width, height) {
-      for (const axis of this.bodyAxes) {
-        const start = this.projectPoint(axis.start, width, height);
-        const end = this.projectPoint(axis.end, width, height);
-        this.ctx.save();
-        this.ctx.strokeStyle = axis.color;
-        this.ctx.fillStyle = axis.color;
-        this.ctx.lineWidth = axis.lineWidth || 3;
-        this.ctx.beginPath();
-        this.ctx.moveTo(start.x, start.y);
-        this.ctx.lineTo(end.x, end.y);
-        this.ctx.stroke();
-        if (axis.showEndpoint !== false) {
-          this.ctx.beginPath();
-          this.ctx.arc(end.x, end.y, 4, 0, Math.PI * 2);
-          this.ctx.fill();
-        }
-        if (axis.showLabel !== false) {
-          this.ctx.font = '700 13px "Microsoft YaHei UI", sans-serif';
-          this.ctx.fillText(axis.label, end.x + 6, end.y - 6);
-        }
-        this.ctx.restore();
+    drawLineRenderable(renderable) {
+      this.ctx.save();
+      this.ctx.strokeStyle = renderable.color;
+      this.ctx.lineWidth = renderable.lineWidth || 2;
+      this.ctx.lineJoin = 'round';
+      this.ctx.lineCap = 'round';
+      this.ctx.beginPath();
+      this.ctx.moveTo(renderable.start.x, renderable.start.y);
+      this.ctx.lineTo(renderable.end.x, renderable.end.y);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    drawPointRenderable(renderable) {
+      this.ctx.save();
+      this.ctx.fillStyle = renderable.fillStyle;
+      if (renderable.strokeStyle) {
+        this.ctx.strokeStyle = renderable.strokeStyle;
       }
+      this.ctx.lineWidth = renderable.lineWidth || 0;
+      this.ctx.beginPath();
+      this.ctx.arc(renderable.point.x, renderable.point.y, renderable.radius || 4, 0, Math.PI * 2);
+      this.ctx.fill();
+      if (renderable.strokeStyle && (renderable.lineWidth || 0) > 0) {
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
+    drawLabelRenderable(label) {
+      this.ctx.save();
+      this.ctx.fillStyle = label.color || 'rgba(229, 231, 235, 0.95)';
+      this.ctx.font = label.font || '12px "Microsoft YaHei UI", sans-serif';
+      this.ctx.fillText(label.text, label.x + (label.dx || 0), label.y + (label.dy || 0));
+      this.ctx.restore();
     }
 
     projectPoint(point, width, height) {
@@ -571,6 +722,48 @@
     return segments;
   }
 
+  function averageDepth(first, second) {
+    return (((first && first.depth) || 0) + ((second && second.depth) || 0)) / 2;
+  }
+
+  function createPointRenderable(point, options = {}) {
+    return {
+      kind: 'point',
+      point,
+      depth: options.depth != null ? options.depth : ((point && point.depth) || 0),
+      layer: options.layer || 0,
+      radius: options.radius || 4,
+      fillStyle: options.fillStyle || '#e5e7eb',
+      strokeStyle: options.strokeStyle || null,
+      lineWidth: options.lineWidth || 0,
+    };
+  }
+
+  function createLabelRenderable(point, options = {}) {
+    return {
+      kind: 'label',
+      x: point.x,
+      y: point.y,
+      depth: options.depth != null ? options.depth : ((point && point.depth) || 0),
+      layer: options.layer || 0,
+      text: options.text || '',
+      color: options.color || 'rgba(229, 231, 235, 0.95)',
+      font: options.font || '12px \"Microsoft YaHei UI\", sans-serif',
+      dx: options.dx || 0,
+      dy: options.dy || 0,
+    };
+  }
+
+  function sortSceneDrawables(drawables) {
+    return [...(drawables || [])].sort((left, right) => {
+      const depthDelta = (right.depth || 0) - (left.depth || 0);
+      if (Math.abs(depthDelta) > 1e-9) {
+        return depthDelta;
+      }
+      return (left.layer || 0) - (right.layer || 0);
+    });
+  }
+
   function formatNumber(value) {
     return Number.isFinite(value) ? value.toFixed(2) : '—';
   }
@@ -587,6 +780,7 @@
     projectPointWithState,
     resolveScreenAnchorWorld,
     setOverlayState,
+    sortSceneDrawables,
     updateInteractionDrag,
   };
 });

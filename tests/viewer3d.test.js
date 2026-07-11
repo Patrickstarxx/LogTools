@@ -7,6 +7,7 @@ const {
   prepareAnchoredRotation,
   projectPointWithState,
   resolveScreenAnchorWorld,
+  sortSceneDrawables,
   updateInteractionDrag,
 } = require('../assets/viewer3d.js');
 
@@ -130,6 +131,26 @@ test('viewer state accepts current markers and body axes overlays', () => {
   assert.equal(state.bodyAxes[3].showEndpoint, false);
   assert.equal(state.bodyAxes[3].showLabel, false);
   assert.deepEqual(state.bodyAxes[3].end, { x: 1, y: 2, z: 10 });
+});
+
+test('scene drawables are sorted from far to near by depth', () => {
+  const sorted = sortSceneDrawables([
+    { id: 'near', depth: 8, layer: 10 },
+    { id: 'far', depth: -5, layer: 10 },
+    { id: 'mid', depth: 2, layer: 10 },
+  ]);
+
+  assert.deepEqual(sorted.map((item) => item.id), ['near', 'mid', 'far']);
+});
+
+test('scene drawables with same depth are sorted by layer', () => {
+  const sorted = sortSceneDrawables([
+    { id: 'label', depth: 4, layer: 70 },
+    { id: 'line', depth: 4, layer: 10 },
+    { id: 'marker', depth: 4, layer: 40 },
+  ]);
+
+  assert.deepEqual(sorted.map((item) => item.id), ['line', 'marker', 'label']);
 });
 
 function makeBounds() {

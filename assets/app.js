@@ -48,6 +48,7 @@
     attitudeConventionA: { convention: 'body_to_ned', source: 'not resolved', confidence: 0 },
     sightlineAngleDegrees: 0,
     sightlineLengthMeters: 5,
+    currentRenderRequestId: 0,
   };
 
   elements.drawButton.addEventListener('click', () => {
@@ -70,15 +71,15 @@
   });
   elements.timeSlider.addEventListener('input', () => {
     state.currentTimeUs = state.timeRange.startUs + Number(elements.timeSlider.value) * 1e6;
-    renderCurrentTime();
+    queueRenderCurrentTime();
   });
   elements.sightlineAngle.addEventListener('input', () => {
     state.sightlineAngleDegrees = parseSightlineAngle(elements.sightlineAngle.value);
-    renderCurrentTime();
+    queueRenderCurrentTime();
   });
   elements.sightlineLength.addEventListener('input', () => {
     state.sightlineLengthMeters = parseSightlineLength(elements.sightlineLength.value);
-    renderCurrentTime();
+    queueRenderCurrentTime();
   });
 
   async function parseAndDraw() {
@@ -181,7 +182,7 @@
       preserveView: false,
     });
     setupTimeline(state.timeRange);
-    renderCurrentTime();
+    queueRenderCurrentTime();
 
     elements.viewerSubtitle.textContent = mode === 'local'
       ? '当前显示本地坐标：PX4 NED 的 z 已转换为向上高度；若两份日志有全球坐标，会自动校正不同本地原点。'
@@ -222,6 +223,20 @@
       preserveView: true,
     });
     viewer.setOverlays(buildCurrentMarkers(slicedTracks), buildBodyAxesOverlay(slicedTracks));
+  }
+
+  function queueRenderCurrentTime() {
+    state.currentRenderRequestId += 1;
+    const requestId = state.currentRenderRequestId;
+    const schedule = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (callback) => setTimeout(callback, 16);
+    schedule(() => {
+      if (requestId !== state.currentRenderRequestId) {
+        return;
+      }
+      renderCurrentTime();
+    });
   }
 
   function buildCurrentMarkers(tracks) {
