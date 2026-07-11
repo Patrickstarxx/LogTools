@@ -7,6 +7,7 @@ const {
   chooseGlobalReference,
   buildTrackSummary,
   buildTimeRange,
+  countTrackPointsAtOrBefore,
   computeLocalOriginOffsets,
   findNearestAtOrBefore,
   normalizeLatLon,
@@ -103,6 +104,21 @@ test('track can be sliced up to a current timestamp', () => {
 
   assert.deepEqual(sliced.points.map((point) => point.t), [1000000, 2000000]);
   assert.equal(sliced.mode, 'local');
+});
+
+test('track visible point count is found without slicing the point array', () => {
+  const track = {
+    points: [
+      { t: 100 },
+      { t: 200 },
+      { t: 300 },
+    ],
+  };
+
+  assert.equal(countTrackPointsAtOrBefore(track, 50), 0);
+  assert.equal(countTrackPointsAtOrBefore(track, 200), 2);
+  assert.equal(countTrackPointsAtOrBefore(track, 250), 2);
+  assert.equal(countTrackPointsAtOrBefore(track, 500), 3);
 });
 
 test('nearest sample at or before current time is selected', () => {

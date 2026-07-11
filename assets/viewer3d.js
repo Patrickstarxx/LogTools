@@ -10,6 +10,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (trajectory) {
   const DEFAULT_YAW = -0.72;
   const DEFAULT_PITCH = 0.48;
+  const INTERACTIVE_SEGMENT_BUDGET = 2200;
 
   class TrajectoryViewer3D {
     constructor(canvas, options = {}) {
@@ -18,6 +19,7 @@
       this.readout = options.readout || null;
       this.emptyState = options.emptyState || null;
       this.tracks = [];
+      this.visiblePointCounts = [];
       this.bounds = null;
       this.yaw = DEFAULT_YAW;
       this.pitch = DEFAULT_PITCH;
@@ -33,8 +35,8 @@
       this.projectedPoints = [];
       this.sceneCache = null;
       this.renderQueued = false;
-      this.currentMarkers = [];
-      this.bodyAxes = [];
+      this.interactive = false;
+      this.interactiveReleaseTimer = null;
       this.axisLabels = { x: 'X', y: 'Y', z: '高度' };
       this.pixelRatio = 1;
       this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -46,6 +48,7 @@
 
     setTracks(tracks, options = {}) {
       this.tracks = (tracks || []).filter((track) => track && track.points && track.points.length > 0);
+      this.visiblePointCounts = this.tracks.map((track) => track.points.length);
       this.bounds = trajectory.computeBounds(this.tracks);
       this.axisLabels = options.axisLabels || this.axisLabels;
       if (!options.preserveView) {
@@ -61,8 +64,18 @@
       this.requestRender();
     }
 
+    setVisiblePointCounts(counts) {
+      this.visiblePointCounts = this.tracks.map((track, index) => {
+        const requested = counts && Number.isFinite(counts[index]) ? counts[index] : track.points.length;
+        return clamp(Math.floor(requested), 0, track.points.length);
+      });
+      this.invalidateSceneCache();
+      this.requestRender();
+    }
+
     clear() {
       this.tracks = [];
+      this.visiblePointCounts = [];
       this.bounds = null;
       this.projectedPoints = [];
       this.panX = 0;
@@ -94,6 +107,7 @@
     bindEvents() {
       this.canvas.addEventListener('pointerdown', (event) => {
         this.dragging = true;
+        this.setInteractive(true);
         this.interactionMode = event.button === 2 ? 'rotate' : 'pan';
         this.canvas.setPointerCapture(event.pointerId);
         this.lastPointer = { x: event.clientX, y: event.clientY };
@@ -121,24 +135,23 @@
         }
       });
 
-      this.canvas.addEventListener('pointerup', (event) => {
+      const endPointerInteraction = (event) => {
         this.dragging = false;
         this.interactionMode = null;
         this.lastPointer = null;
         this.rotationAnchor = null;
-        try {
-          this.canvas.releasePointerCapture(event.pointerId);
-        } catch {
-          // Pointer may already be released by the browser.
+        this.scheduleInteractiveRelease();
+        if (event && event.pointerId != null) {
+          try {
+            this.canvas.releasePointerCapture(event.pointerId);
+          } catch {
+            // Pointer may already be released by the browser.
+          }
         }
-      });
+      };
 
-      this.canvas.addEventListener('pointerleave', () => {
-        this.dragging = false;
-        this.interactionMode = null;
-        this.lastPointer = null;
-        this.rotationAnchor = null;
-      });
+      this.canvas.addEventListener('pointerup', endPointerInteraction);
+      this.canvas.addEventListener('pointerleave', endPointerInteraction);
 
       this.canvas.addEventListener('contextmenu', (event) => {
         event.preventDefault();
@@ -146,6 +159,7 @@
 
       this.canvas.addEventListener('wheel', (event) => {
         event.preventDefault();
+        this.setInteractive(true);
         const scale = Math.exp(-event.deltaY * 0.001);
         const rect = this.canvas.getBoundingClientRect();
         applyAnchoredZoom(this, {
@@ -154,7 +168,27 @@
         }, scale, this.bounds, this.getViewportSize());
         this.invalidateSceneCache();
         this.requestRender();
+        this.scheduleInteractiveRelease();
       }, { passive: false });
+    }
+
+    setInteractive(value) {
+      if (this.interactive === value) {
+        return;
+      }
+      this.interactive = value;
+      this.invalidateSceneCache();
+    }
+
+    scheduleInteractiveRelease() {
+      if (this.interactiveReleaseTimer) {
+        clearTimeout(this.interactiveReleaseTimer);
+      }
+      this.interactiveReleaseTimer = setTimeout(() => {
+        this.interactiveReleaseTimer = null;
+        this.setInteractive(false);
+        this.requestRender();
+      }, 120);
     }
 
     invalidateSceneCache() {
@@ -261,11 +295,13 @@
       const renderables = [];
       const labels = [];
 
-      for (const track of this.tracks) {
-        const projectedTrack = this.buildProjectedTrack(track, width, height);
-        if (projectedTrack.points.length === 0) {
+      for (let trackIndex = 0; trackIndex < this.tracks.length; trackIndex += 1) {
+        const track = this.tracks[trackIndex];
+        const visibleCount = this.getVisiblePointCount(trackIndex);
+        if (visibleCount <= 0) {
           continue;
         }
+        const projectedTrack = this.buildProjectedTrack(track, visibleCount, width, height);
         this.collectTrackHoverPoints(projectedTrack);
         const trackScene = this.buildTrackScene(projectedTrack);
         renderables.push(...trackScene.renderables);
@@ -286,19 +322,40 @@
       };
     }
 
-    buildProjectedTrack(track, width, height) {
-      return {
-        track,
-        points: track.points.map((point) => ({
-          source: point,
-          projected: this.projectPoint(point, width, height),
-        })),
-      };
+    getVisiblePointCount(trackIndex) {
+      const track = this.tracks[trackIndex];
+      const count = this.visiblePointCounts[trackIndex];
+      return clamp(Number.isFinite(count) ? count : track.points.length, 0, track.points.length);
+    }
+
+    buildProjectedTrack(track, visibleCount, width, height) {
+      const count = clamp(visibleCount, 0, track.points.length);
+      const step = this.getPointStep(count);
+      const points = [];
+      const lastIndex = count - 1;
+      for (let index = 0; index < count; index += step) {
+        points.push(projectTrackPoint(this, track, index, width, height));
+      }
+      if (lastIndex >= 0 && points[points.length - 1]?.index !== lastIndex) {
+        points.push(projectTrackPoint(this, track, lastIndex, width, height));
+      }
+      return { track, points };
+    }
+
+    getPointStep(pointCount) {
+      if (!this.interactive) {
+        return 1;
+      }
+      return Math.max(1, Math.ceil(pointCount / INTERACTIVE_SEGMENT_BUDGET));
     }
 
     collectTrackHoverPoints(projectedTrack) {
+      if (this.interactive) {
+        return;
+      }
       const { track, points } = projectedTrack;
-      for (let index = 0; index < points.length; index += Math.max(1, Math.floor(points.length / 500))) {
+      const step = Math.max(1, Math.floor(points.length / 500));
+      for (let index = 0; index < points.length; index += step) {
         this.projectedPoints.push({
           track,
           point: points[index].source,
@@ -322,7 +379,7 @@
           start: points[index - 1].projected,
           end: points[index].projected,
           color,
-          lineWidth: 3,
+          lineWidth: this.interactive ? 2 : 3,
         });
       }
 
@@ -521,12 +578,45 @@
     }
   }
 
+  function projectTrackPoint(viewer, track, index, width, height) {
+    const point = track.points[index];
+    if (viewer.interactive) {
+      return { index, source: point, projected: viewer.projectPoint(point, width, height) };
+    }
+    if (!point.__projectionCache) {
+      Object.defineProperty(point, '__projectionCache', {
+        value: {},
+        enumerable: false,
+        configurable: true,
+      });
+    }
+    const key = makeProjectionCacheKey(viewer, width, height);
+    let projected = point.__projectionCache[key];
+    if (!projected) {
+      projected = viewer.projectPoint(point, width, height);
+      point.__projectionCache[key] = projected;
+    }
+    return { index, source: point, projected };
+  }
+
+  function makeProjectionCacheKey(state, width, height) {
+    return [
+      width,
+      height,
+      state.yaw.toFixed(6),
+      state.pitch.toFixed(6),
+      state.panX.toFixed(2),
+      state.panY.toFixed(2),
+      state.zoom.toFixed(6),
+    ].join('|');
+  }
+
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
 
   function createInteractionState() {
-      return {
+    return {
       yaw: DEFAULT_YAW,
       pitch: DEFAULT_PITCH,
       panX: 0,
@@ -748,7 +838,7 @@
       layer: options.layer || 0,
       text: options.text || '',
       color: options.color || 'rgba(229, 231, 235, 0.95)',
-      font: options.font || '12px \"Microsoft YaHei UI\", sans-serif',
+      font: options.font || '12px "Microsoft YaHei UI", sans-serif',
       dx: options.dx || 0,
       dy: options.dy || 0,
     };

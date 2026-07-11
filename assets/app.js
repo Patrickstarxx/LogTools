@@ -3,6 +3,7 @@
   const {
     buildTimeRange,
     buildTrackSummary,
+    countTrackPointsAtOrBefore,
     chooseGlobalReference,
     computeLocalOriginOffsets,
     findNearestAtOrBefore,
@@ -11,9 +12,12 @@
     normalizeLocalSamples,
     quaternionToFrdAxes,
     resolveAttitudeConvention,
-    sliceTrackAtTime,
   } = window.PX4Trajectory;
   const { TrajectoryViewer3D } = window.PX4Viewer3D;
+
+  const DRONE_A_LABEL = '无人机 A';
+  const DRONE_B_LABEL = '无人机 B';
+  const DEFAULT_SIGHTLINE_LENGTH = 5;
 
   const elements = {
     fileA: document.getElementById('fileA'),
@@ -42,19 +46,20 @@
   const state = {
     parsedLogs: { a: null, b: null },
     fullTracks: [],
+    renderTracks: [],
     timeRange: { startUs: 0, endUs: 0, durationUs: 0 },
     currentTimeUs: 0,
-    localOffsets: [{ x: 0, y: 0, z: 0, available: false }, { x: 0, y: 0, z: 0, available: false }],
+    localOffsets: [],
     attitudeConventionA: { convention: 'body_to_ned', source: 'not resolved', confidence: 0 },
     sightlineAngleDegrees: 0,
-    sightlineLengthMeters: 5,
+    sightlineLengthMeters: DEFAULT_SIGHTLINE_LENGTH,
     currentRenderRequestId: 0,
   };
 
   elements.drawButton.addEventListener('click', () => {
     parseAndDraw().catch((error) => {
-      renderError(elements.statusA, '无人机 A', error);
-      renderError(elements.statusB, '无人机 B', error);
+      renderError(elements.statusA, DRONE_A_LABEL, error);
+      renderError(elements.statusB, DRONE_B_LABEL, error);
       viewer.clear();
       disableTimeline();
     }).finally(() => {
@@ -64,19 +69,24 @@
   });
 
   elements.clearButton.addEventListener('click', clearAll);
+
   elements.coordinateMode.addEventListener('change', () => {
     if (state.parsedLogs.a || state.parsedLogs.b) {
       rebuildTracksForMode();
     }
   });
+
   elements.timeSlider.addEventListener('input', () => {
     state.currentTimeUs = state.timeRange.startUs + Number(elements.timeSlider.value) * 1e6;
+    beginInteractiveRender();
     queueRenderCurrentTime();
   });
+
   elements.sightlineAngle.addEventListener('input', () => {
     state.sightlineAngleDegrees = parseSightlineAngle(elements.sightlineAngle.value);
     queueRenderCurrentTime();
   });
+
   elements.sightlineLength.addEventListener('input', () => {
     state.sightlineLengthMeters = parseSightlineLength(elements.sightlineLength.value);
     queueRenderCurrentTime();
@@ -87,20 +97,20 @@
     const fileB = elements.fileB.files[0];
 
     if (!fileA || !fileB) {
-      if (!fileA) renderError(elements.statusA, '无人机 A', new Error('请选择无人机 A 的 .ulg 文件。'));
-      if (!fileB) renderError(elements.statusB, '无人机 B', new Error('请选择无人机 B 的 .ulg 文件。'));
+      if (!fileA) renderError(elements.statusA, DRONE_A_LABEL, new Error('请选择无人机 A 的 .ulg 文件。'));
+      if (!fileB) renderError(elements.statusB, DRONE_B_LABEL, new Error('请选择无人机 B 的 .ulg 文件。'));
       return;
     }
 
     elements.drawButton.disabled = true;
     elements.drawButton.textContent = '解析中...';
-    renderPending(elements.statusA, '无人机 A', fileA.name);
-    renderPending(elements.statusB, '无人机 B', fileB.name);
+    renderPending(elements.statusA, DRONE_A_LABEL, fileA.name);
+    renderPending(elements.statusB, DRONE_B_LABEL, fileB.name);
     disableTimeline();
 
     const [resultA, resultB] = await Promise.allSettled([parseOne(fileA), parseOne(fileB)]);
-    state.parsedLogs.a = unwrapResult(resultA, elements.statusA, '无人机 A');
-    state.parsedLogs.b = unwrapResult(resultB, elements.statusB, '无人机 B');
+    state.parsedLogs.a = unwrapResult(resultA, elements.statusA, DRONE_A_LABEL);
+    state.parsedLogs.b = unwrapResult(resultB, elements.statusB, DRONE_B_LABEL);
     rebuildTracksForMode();
   }
 
@@ -121,64 +131,72 @@
 
   function rebuildTracksForMode() {
     const mode = elements.coordinateMode.value;
-    const logs = [
-      state.parsedLogs.a ? { key: 'a', label: '无人机 A', color: '#38bdf8', log: state.parsedLogs.a, card: elements.statusA } : null,
-      state.parsedLogs.b ? { key: 'b', label: '无人机 B', color: '#f97316', log: state.parsedLogs.b, card: elements.statusB } : null,
+    const entries = [
+      state.parsedLogs.a ? { key: 'a', label: DRONE_A_LABEL, color: '#38bdf8', log: state.parsedLogs.a, card: elements.statusA } : null,
+      state.parsedLogs.b ? { key: 'b', label: DRONE_B_LABEL, color: '#f97316', log: state.parsedLogs.b, card: elements.statusB } : null,
     ].filter(Boolean);
 
-    if (logs.length === 0) {
+    if (entries.length === 0) {
+      state.fullTracks = [];
+      state.renderTracks = [];
       viewer.clear();
       disableTimeline();
       return;
     }
 
     const globalReference = mode === 'global'
-      ? chooseGlobalReference(logs.map((entry) => ({ globalRaw: entry.log.globalRaw })))
+      ? chooseGlobalReference(entries.map((entry) => ({ globalRaw: entry.log.globalRaw })))
       : null;
-    state.localOffsets = mode === 'local'
-      ? computeLocalOriginOffsets(logs.map((entry) => entry.log))
-      : logs.map(() => ({ x: 0, y: 0, z: 0, available: false }));
+    const localOffsets = mode === 'local'
+      ? computeLocalOriginOffsets(entries.map((entry) => entry.log))
+      : entries.map(() => ({ x: 0, y: 0, z: 0, available: false }));
+    state.localOffsets = localOffsets;
 
-    state.fullTracks = logs.map((entry, index) => {
+    state.fullTracks = entries.map((entry, index) => {
       const track = mode === 'local'
-        ? normalizeLocalSamples(entry.log.localRaw, state.localOffsets[index])
+        ? normalizeLocalSamples(entry.log.localRaw, localOffsets[index])
         : normalizeGlobalSamples(entry.log.globalRaw, globalReference);
       track.name = entry.label;
       track.color = entry.color;
       track.key = entry.key;
-      renderStatus(entry.card, entry.label, entry.log, mode, track, state.localOffsets[index]);
+      renderStatus(entry.card, entry.label, entry.log, mode, track, localOffsets[index]);
       return track;
     });
+
     state.attitudeConventionA = state.parsedLogs.a
       ? resolveAttitudeConvention(state.parsedLogs.a.attitudeRaw, state.parsedLogs.a.localRaw)
       : { convention: 'body_to_ned', source: 'not resolved', confidence: 0 };
-    if (state.parsedLogs.a) {
+
+    const trackAIndex = state.fullTracks.findIndex((track) => track.key === 'a');
+    if (trackAIndex >= 0) {
+      const entryA = entries.find((entry) => entry.key === 'a');
       renderStatus(
         elements.statusA,
-        '无人机 A',
+        DRONE_A_LABEL,
         state.parsedLogs.a,
         mode,
-        state.fullTracks.find((track) => track.key === 'a') || { points: [] },
-        state.localOffsets[0],
+        state.fullTracks[trackAIndex],
+        localOffsets[trackAIndex],
         state.attitudeConventionA,
       );
+      if (entryA && entryA.card !== elements.statusA) {
+        renderStatus(entryA.card, entryA.label, entryA.log, mode, state.fullTracks[trackAIndex], localOffsets[trackAIndex], state.attitudeConventionA);
+      }
     }
 
-    const drawableTracks = state.fullTracks.filter((track) => track.points.length >= 2);
-    if (drawableTracks.length === 0) {
+    state.renderTracks = state.fullTracks.filter((track) => track.points.length >= 2);
+    if (state.renderTracks.length === 0) {
       viewer.clear();
       disableTimeline();
       elements.emptyState.classList.remove('hidden');
-      elements.emptyState.textContent = '当前坐标模式下没有足够轨迹点。请切换坐标模式或检查日志 topic。';
+      elements.emptyState.textContent = '当前坐标模式下没有足够的轨迹点。请切换坐标模式或检查日志 topic。';
       return;
     }
 
-    state.timeRange = buildTimeRange(drawableTracks);
+    state.timeRange = buildTimeRange(state.renderTracks);
     state.currentTimeUs = state.timeRange.endUs;
-    viewer.setTracks(drawableTracks, {
-      axisLabels: mode === 'local'
-        ? { x: 'X', y: 'Y', z: '高度 (-z)' }
-        : { x: 'East', y: 'North', z: 'Up' },
+    viewer.setTracks(state.renderTracks, {
+      axisLabels: getAxisLabels(mode),
       preserveView: false,
     });
     setupTimeline(state.timeRange);
@@ -187,6 +205,12 @@
     elements.viewerSubtitle.textContent = mode === 'local'
       ? '当前显示本地坐标：PX4 NED 的 z 已转换为向上高度；若两份日志有全球坐标，会自动校正不同本地原点。'
       : '当前显示全球坐标：经纬高已转换为相对参考原点的 ENU 米制坐标。';
+  }
+
+  function getAxisLabels(mode) {
+    return mode === 'local'
+      ? { x: 'X', y: 'Y', z: '高度 (-z)' }
+      : { x: 'East', y: 'North', z: 'Up' };
   }
 
   function setupTimeline(range) {
@@ -208,21 +232,26 @@
   }
 
   function renderCurrentTime() {
-    if (!state.fullTracks.length) {
+    if (!state.renderTracks.length) {
       return;
     }
     const currentSeconds = (state.currentTimeUs - state.timeRange.startUs) / 1e6;
     elements.timeLabel.textContent = `${formatSeconds(currentSeconds)} / ${formatSeconds(state.timeRange.durationUs / 1e6)}`;
-    const slicedTracks = state.fullTracks
-      .map((track) => sliceTrackAtTime(track, state.currentTimeUs))
-      .filter((track) => track.points.length > 0);
-    viewer.setTracks(slicedTracks, {
-      axisLabels: elements.coordinateMode.value === 'local'
-        ? { x: 'X', y: 'Y', z: '高度 (-z)' }
-        : { x: 'East', y: 'North', z: 'Up' },
-      preserveView: true,
-    });
-    viewer.setOverlays(buildCurrentMarkers(slicedTracks), buildBodyAxesOverlay(slicedTracks));
+    const visibleCounts = state.renderTracks.map((track) => countTrackPointsAtOrBefore(track, state.currentTimeUs));
+    viewer.setVisiblePointCounts(visibleCounts);
+    viewer.setOverlays(
+      buildCurrentMarkers(state.renderTracks, visibleCounts),
+      buildBodyAxesOverlay(state.renderTracks, visibleCounts),
+    );
+  }
+
+  function beginInteractiveRender() {
+    if (typeof viewer.setInteractive === 'function') {
+      viewer.setInteractive(true);
+    }
+    if (typeof viewer.scheduleInteractiveRelease === 'function') {
+      viewer.scheduleInteractiveRelease();
+    }
   }
 
   function queueRenderCurrentTime() {
@@ -239,21 +268,34 @@
     });
   }
 
-  function buildCurrentMarkers(tracks) {
-    return tracks.map((track) => ({
-      name: track.name,
-      color: track.color,
-      point: track.points[track.points.length - 1],
-    }));
+  function buildCurrentMarkers(tracks, visibleCounts) {
+    return tracks
+      .map((track, index) => {
+        const visibleCount = visibleCounts[index] || 0;
+        if (visibleCount <= 0) {
+          return null;
+        }
+        return {
+          name: track.name,
+          color: track.color,
+          point: track.points[visibleCount - 1],
+        };
+      })
+      .filter(Boolean);
   }
 
-  function buildBodyAxesOverlay(tracks) {
-    const trackA = tracks.find((track) => track.key === 'a');
+  function buildBodyAxesOverlay(tracks, visibleCounts) {
+    const trackAIndex = tracks.findIndex((track) => track.key === 'a');
+    const trackA = trackAIndex >= 0 ? tracks[trackAIndex] : null;
     const logA = state.parsedLogs.a;
     if (!trackA || !logA || !logA.attitudeRaw || logA.attitudeRaw.length === 0) {
       return null;
     }
-    const currentPoint = trackA.points[trackA.points.length - 1];
+    const visibleCount = visibleCounts[trackAIndex] || 0;
+    if (visibleCount <= 0) {
+      return null;
+    }
+    const currentPoint = trackA.points[visibleCount - 1];
     const attitude = findNearestAtOrBefore(logA.attitudeRaw, state.currentTimeUs);
     const axes = attitude ? quaternionToFrdAxes(attitude.q, state.attitudeConventionA.convention) : null;
     if (!currentPoint || !axes) {
@@ -296,10 +338,10 @@
     if (mode === 'local' && localOffset && !localOffset.available) {
       warningItems.push('缺少全球坐标，无法校正本地坐标原点，起点可能重合。');
     }
-    if (label === '无人机 A' && !attitude.available) {
+    if (label === DRONE_A_LABEL && !attitude.available) {
       warningItems.push('缺少 vehicle_attitude，无法绘制机体 FRD 坐标轴。');
     }
-    if (label === '无人机 A' && attitude.available && attitudeConvention) {
+    if (label === DRONE_A_LABEL && attitude.available && attitudeConvention) {
       warningItems.push(`姿态约定：${attitudeConvention.convention}，依据：${attitudeConvention.source}。`);
       warningItems.push(`视线角度：${formatAngle(state.sightlineAngleDegrees)}（正角朝 -D，负角朝 +D）。`);
       warningItems.push(`视线长度：${formatLength(state.sightlineLengthMeters)}。`);
@@ -356,7 +398,7 @@
 
   function parseSightlineLength(value) {
     const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SIGHTLINE_LENGTH;
   }
 
   function clearAll() {
@@ -364,16 +406,18 @@
     elements.fileB.value = '';
     state.parsedLogs = { a: null, b: null };
     state.fullTracks = [];
+    state.renderTracks = [];
     state.currentTimeUs = 0;
     state.timeRange = { startUs: 0, endUs: 0, durationUs: 0 };
+    state.localOffsets = [];
     state.sightlineAngleDegrees = 0;
-    state.sightlineLengthMeters = 5;
+    state.sightlineLengthMeters = DEFAULT_SIGHTLINE_LENGTH;
     elements.sightlineAngle.value = '0';
-    elements.sightlineLength.value = '5';
+    elements.sightlineLength.value = String(DEFAULT_SIGHTLINE_LENGTH);
     viewer.clear();
     disableTimeline();
-    elements.statusA.innerHTML = '<h2>无人机 A</h2><p class="muted">尚未选择日志。</p>';
-    elements.statusB.innerHTML = '<h2>无人机 B</h2><p class="muted">尚未选择日志。</p>';
+    elements.statusA.innerHTML = `<h2>${DRONE_A_LABEL}</h2><p class="muted">尚未选择日志。</p>`;
+    elements.statusB.innerHTML = `<h2>${DRONE_B_LABEL}</h2><p class="muted">尚未选择日志。</p>`;
     elements.emptyState.textContent = '选择两份日志后点击“解析并绘制”。';
     elements.viewerSubtitle.textContent = '左键按住拖拽平移，右键按住拖拽旋转，滚轮缩放，移动鼠标查看最近轨迹点。';
   }

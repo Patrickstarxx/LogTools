@@ -141,6 +141,21 @@
     };
   }
 
+  function countTrackPointsAtOrBefore(track, timeUs) {
+    const points = (track && track.points) || [];
+    let low = 0;
+    let high = points.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (points[mid].t <= timeUs) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  }
+
   function findNearestAtOrBefore(samples, timeUs) {
     let best = null;
     for (const sample of samples || []) {
@@ -405,6 +420,7 @@
     computeSightlineVector,
     quaternionToFrdAxes,
     resolveAttitudeConvention,
+    countTrackPointsAtOrBefore,
     sliceTrackAtTime,
     computeBounds,
   };
