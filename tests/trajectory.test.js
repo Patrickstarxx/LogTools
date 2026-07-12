@@ -9,6 +9,7 @@ const {
   buildTimeRange,
   countTrackPointsAtOrBefore,
   computeLocalOriginOffsets,
+  computeRelativeMetrics,
   findNearestAtOrBefore,
   normalizeLatLon,
   computeSightlineVector,
@@ -175,6 +176,35 @@ test('identity quaternion maps FRD body axes into ENU plot coordinates', () => {
   assert.deepEqual(axes.forward, { x: 0, y: 1, z: 0 });
   assert.deepEqual(axes.right, { x: 1, y: 0, z: 0 });
   assert.deepEqual(axes.down, { x: 0, y: 0, z: -1 });
+});
+
+test('relative position metrics report B minus A in NED and drone A FRD axes', () => {
+  const axes = quaternionToFrdAxes([1, 0, 0, 0]);
+  const metrics = computeRelativeMetrics(
+    { x: 10, y: 20, z: 30 },
+    { x: 13, y: 24, z: 18 },
+    axes,
+  );
+
+  assert.equal(metrics.euclideanDistance, 13);
+  assert.deepEqual(metrics.ned, { north: 4, east: 3, down: 12 });
+  assert.deepEqual(metrics.frd, { forward: 4, right: 3, down: 12 });
+});
+
+test('relative position metrics keep NED data when drone A attitude is unavailable', () => {
+  const metrics = computeRelativeMetrics(
+    { x: 0, y: 0, z: 0 },
+    { x: -2, y: 5, z: 7 },
+    null,
+  );
+
+  assert.ok(Math.abs(metrics.euclideanDistance - Math.sqrt(78)) < 1e-12);
+  assert.deepEqual(metrics.ned, { north: 5, east: -2, down: -7 });
+  assert.equal(metrics.frd, null);
+});
+
+test('relative position metrics reject incomplete positions', () => {
+  assert.equal(computeRelativeMetrics({ x: 0, y: 0 }, { x: 1, y: 2, z: 3 }), null);
 });
 
 test('sightline angle rotates from F toward minus D for positive angles', () => {

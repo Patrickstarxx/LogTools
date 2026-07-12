@@ -6,6 +6,7 @@
     countTrackPointsAtOrBefore,
     chooseGlobalReference,
     computeLocalOriginOffsets,
+    computeRelativeMetrics,
     findNearestAtOrBefore,
     computeSightlineVector,
     normalizeGlobalSamples,
@@ -36,6 +37,14 @@
     timeSlider: document.getElementById('timeSlider'),
     timeLabel: document.getElementById('timeLabel'),
     timelineHint: document.getElementById('timelineHint'),
+    relativeDistance: document.getElementById('relativeDistance'),
+    nedNorth: document.getElementById('nedNorth'),
+    nedEast: document.getElementById('nedEast'),
+    nedDown: document.getElementById('nedDown'),
+    frdForward: document.getElementById('frdForward'),
+    frdRight: document.getElementById('frdRight'),
+    frdDown: document.getElementById('frdDown'),
+    relativeReadoutHint: document.getElementById('relativeReadoutHint'),
   };
 
   const viewer = new TrajectoryViewer3D(elements.canvas, {
@@ -229,6 +238,7 @@
     elements.timeSlider.value = '0';
     elements.timeLabel.textContent = '—';
     elements.timelineHint.textContent = '加载日志后可拖动时间轴，轨迹会随当前时间逐步绘制。';
+    resetRelativeReadout();
   }
 
   function renderCurrentTime() {
@@ -238,11 +248,13 @@
     const currentSeconds = (state.currentTimeUs - state.timeRange.startUs) / 1e6;
     elements.timeLabel.textContent = `${formatSeconds(currentSeconds)} / ${formatSeconds(state.timeRange.durationUs / 1e6)}`;
     const visibleCounts = state.renderTracks.map((track) => countTrackPointsAtOrBefore(track, state.currentTimeUs));
+    const axesA = getCurrentAxesA();
     viewer.setVisiblePointCounts(visibleCounts);
     viewer.setOverlays(
       buildCurrentMarkers(state.renderTracks, visibleCounts),
-      buildBodyAxesOverlay(state.renderTracks, visibleCounts),
+      buildBodyAxesOverlay(state.renderTracks, visibleCounts, axesA),
     );
+    updateRelativeReadout(axesA);
   }
 
   function beginInteractiveRender() {
@@ -284,11 +296,21 @@
       .filter(Boolean);
   }
 
-  function buildBodyAxesOverlay(tracks, visibleCounts) {
+  function getCurrentAxesA() {
+    const logA = state.parsedLogs.a;
+    if (!logA || !logA.attitudeRaw || logA.attitudeRaw.length === 0) {
+      return null;
+    }
+    const attitude = findNearestAtOrBefore(logA.attitudeRaw, state.currentTimeUs);
+    return attitude
+      ? quaternionToFrdAxes(attitude.q, state.attitudeConventionA.convention)
+      : null;
+  }
+
+  function buildBodyAxesOverlay(tracks, visibleCounts, axes) {
     const trackAIndex = tracks.findIndex((track) => track.key === 'a');
     const trackA = trackAIndex >= 0 ? tracks[trackAIndex] : null;
-    const logA = state.parsedLogs.a;
-    if (!trackA || !logA || !logA.attitudeRaw || logA.attitudeRaw.length === 0) {
+    if (!trackA || !axes) {
       return null;
     }
     const visibleCount = visibleCounts[trackAIndex] || 0;
@@ -296,8 +318,6 @@
       return null;
     }
     const currentPoint = trackA.points[visibleCount - 1];
-    const attitude = findNearestAtOrBefore(logA.attitudeRaw, state.currentTimeUs);
-    const axes = attitude ? quaternionToFrdAxes(attitude.q, state.attitudeConventionA.convention) : null;
     if (!currentPoint || !axes) {
       return null;
     }
@@ -310,6 +330,54 @@
       sightlineLength: state.sightlineLengthMeters,
       length: axisLength,
     };
+  }
+
+  function updateRelativeReadout(axesA) {
+    const pointA = getCurrentPoint('a');
+    const pointB = getCurrentPoint('b');
+    const metrics = computeRelativeMetrics(pointA, pointB, axesA);
+    if (!metrics) {
+      resetRelativeReadout('当前时刻需要无人机 A、B 均有位置数据。');
+      return;
+    }
+
+    elements.relativeDistance.textContent = formatMetric(metrics.euclideanDistance);
+    elements.nedNorth.textContent = formatMetric(metrics.ned.north, true);
+    elements.nedEast.textContent = formatMetric(metrics.ned.east, true);
+    elements.nedDown.textContent = formatMetric(metrics.ned.down, true);
+    if (metrics.frd) {
+      elements.frdForward.textContent = formatMetric(metrics.frd.forward, true);
+      elements.frdRight.textContent = formatMetric(metrics.frd.right, true);
+      elements.frdDown.textContent = formatMetric(metrics.frd.down, true);
+      elements.relativeReadoutHint.textContent = '投影为 B − A 的有符号距离；正值表示 B 位于对应正轴方向。';
+    } else {
+      clearFrdReadout();
+      elements.relativeReadoutHint.textContent = 'NED 已更新；当前时刻缺少无人机 A 姿态，无法计算 FRD 投影。';
+    }
+  }
+
+  function getCurrentPoint(key) {
+    const track = state.fullTracks.find((candidate) => candidate.key === key);
+    if (!track) {
+      return null;
+    }
+    const count = countTrackPointsAtOrBefore(track, state.currentTimeUs);
+    return count > 0 ? track.points[count - 1] : null;
+  }
+
+  function resetRelativeReadout(hint = '加载两份日志后显示；投影为 B − A 的有符号距离。') {
+    elements.relativeDistance.textContent = '—';
+    elements.nedNorth.textContent = '—';
+    elements.nedEast.textContent = '—';
+    elements.nedDown.textContent = '—';
+    clearFrdReadout();
+    elements.relativeReadoutHint.textContent = hint;
+  }
+
+  function clearFrdReadout() {
+    elements.frdForward.textContent = '—';
+    elements.frdRight.textContent = '—';
+    elements.frdDown.textContent = '—';
   }
 
   function renderPending(card, label, fileName) {
@@ -389,6 +457,13 @@
 
   function formatLength(value) {
     return `${Number(value).toFixed(2)} m`;
+  }
+
+  function formatMetric(value, signed = false) {
+    if (!Number.isFinite(value)) return '—';
+    const normalized = Math.abs(value) < 0.0005 ? 0 : value;
+    const sign = signed && normalized > 0 ? '+' : '';
+    return `${sign}${normalized.toFixed(3)} m`;
   }
 
   function parseSightlineAngle(value) {

@@ -304,6 +304,172 @@ input[type="file"]::file-selector-button {
   background-size: 32px 32px;
 }
 
+.trajectory-stage {
+  display: grid;
+  grid-template-columns: minmax(230px, 260px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.relative-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  background:
+    linear-gradient(145deg, rgba(56, 189, 248, 0.09), transparent 42%),
+    #070b13;
+}
+
+.relative-readout-heading,
+.projection-heading,
+.metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.relative-readout-heading h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.readout-eyebrow {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: #a7f3d0;
+  font-size: 12px;
+}
+
+.live-indicator i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
+}
+
+.distance-card,
+.projection-card {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.distance-card {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.distance-card output {
+  color: #e0f2fe;
+  font-size: 24px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.projection-card {
+  padding: 12px;
+}
+
+.projection-heading {
+  margin-bottom: 9px;
+}
+
+.projection-heading h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.projection-heading span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.metric-list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+}
+
+.metric-row {
+  min-height: 34px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.metric-row dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric-row dd {
+  margin: 0;
+}
+
+.metric-row output {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.axis-tag {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 6px;
+  color: #07111f;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.axis-n,
+.axis-f {
+  background: #f87171;
+}
+
+.axis-e,
+.axis-r {
+  background: #4ade80;
+}
+
+.axis-d {
+  color: #eff6ff;
+  background: #3b82f6;
+}
+
+.relative-readout-hint {
+  margin: auto 1px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 canvas {
   display: block;
   width: 100%;
@@ -404,5 +570,25 @@ canvas {
 
   .actions button {
     flex: 1;
+  }
+
+  .trajectory-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .relative-readout {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .relative-readout-heading,
+  .relative-readout-hint {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 520px) {
+  .relative-readout {
+    display: flex;
   }
 }

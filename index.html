@@ -81,11 +81,53 @@
             <span><i class="legend-dot drone-b"></i>无人机 B</span>
           </div>
         </div>
-        <div class="canvas-frame">
-          <canvas id="trajectoryCanvas" width="1200" height="720">
-            当前浏览器不支持 Canvas，无法显示三维轨迹。
-          </canvas>
-          <div id="emptyState" class="empty-state">选择两份日志后点击“解析并绘制”。</div>
+        <div class="trajectory-stage">
+          <aside class="relative-readout" aria-labelledby="relative-readout-title">
+            <div class="relative-readout-heading">
+              <div>
+                <p class="readout-eyebrow">B 相对 A</p>
+                <h3 id="relative-readout-title">双机相对位置</h3>
+              </div>
+              <span class="live-indicator"><i></i>实时</span>
+            </div>
+
+            <section class="distance-card" aria-label="两机三维欧氏距离">
+              <span>三维欧氏距离</span>
+              <output id="relativeDistance">—</output>
+            </section>
+
+            <section class="projection-card" aria-labelledby="ned-projection-title">
+              <div class="projection-heading">
+                <h4 id="ned-projection-title">NED 轴向投影</h4>
+                <span>北东地</span>
+              </div>
+              <dl class="metric-list">
+                <div class="metric-row"><dt><i class="axis-tag axis-n">N</i>北</dt><dd><output id="nedNorth">—</output></dd></div>
+                <div class="metric-row"><dt><i class="axis-tag axis-e">E</i>东</dt><dd><output id="nedEast">—</output></dd></div>
+                <div class="metric-row"><dt><i class="axis-tag axis-d">D</i>地</dt><dd><output id="nedDown">—</output></dd></div>
+              </dl>
+            </section>
+
+            <section class="projection-card" aria-labelledby="frd-projection-title">
+              <div class="projection-heading">
+                <h4 id="frd-projection-title">无人机 A · FRD</h4>
+                <span>机体系</span>
+              </div>
+              <dl class="metric-list">
+                <div class="metric-row"><dt><i class="axis-tag axis-f">F</i>前</dt><dd><output id="frdForward">—</output></dd></div>
+                <div class="metric-row"><dt><i class="axis-tag axis-r">R</i>右</dt><dd><output id="frdRight">—</output></dd></div>
+                <div class="metric-row"><dt><i class="axis-tag axis-d">D</i>下</dt><dd><output id="frdDown">—</output></dd></div>
+              </dl>
+            </section>
+
+            <p id="relativeReadoutHint" class="relative-readout-hint">加载两份日志后显示；投影为 B − A 的有符号距离。</p>
+          </aside>
+          <div class="canvas-frame">
+            <canvas id="trajectoryCanvas" width="1200" height="720">
+              当前浏览器不支持 Canvas，无法显示三维轨迹。
+            </canvas>
+            <div id="emptyState" class="empty-state">选择两份日志后点击“解析并绘制”。</div>
+          </div>
         </div>
         <div class="timeline-panel">
           <div class="timeline-header">

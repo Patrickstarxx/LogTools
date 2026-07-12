@@ -270,6 +270,66 @@
     });
   }
 
+  function computeRelativeMetrics(pointA, pointB, axesA) {
+    if (!isFinitePoint(pointA) || !isFinitePoint(pointB)) {
+      return null;
+    }
+
+    // All normalized tracks use ENU plot coordinates. Convert B - A to NED
+    // here so the displayed signs retain the PX4 coordinate convention.
+    const relativeEnu = {
+      x: pointB.x - pointA.x,
+      y: pointB.y - pointA.y,
+      z: pointB.z - pointA.z,
+    };
+    const metrics = {
+      euclideanDistance: cleanZero(Math.hypot(relativeEnu.x, relativeEnu.y, relativeEnu.z)),
+      ned: {
+        north: cleanZero(relativeEnu.y),
+        east: cleanZero(relativeEnu.x),
+        down: cleanZero(-relativeEnu.z),
+      },
+      frd: null,
+    };
+
+    if (axesA && axesA.forward && axesA.right && axesA.down) {
+      const forward = projectOntoAxis(relativeEnu, axesA.forward);
+      const right = projectOntoAxis(relativeEnu, axesA.right);
+      const down = projectOntoAxis(relativeEnu, axesA.down);
+      if ([forward, right, down].every(isFiniteNumber)) {
+        metrics.frd = {
+          forward: cleanZero(forward),
+          right: cleanZero(right),
+          down: cleanZero(down),
+        };
+      }
+    }
+
+    return metrics;
+  }
+
+  function isFinitePoint(point) {
+    return Boolean(point)
+      && isFiniteNumber(point.x)
+      && isFiniteNumber(point.y)
+      && isFiniteNumber(point.z);
+  }
+
+  function projectOntoAxis(vector, axis) {
+    if (!isFinitePoint(axis)) {
+      return Number.NaN;
+    }
+    const axisLength = Math.hypot(axis.x, axis.y, axis.z);
+    if (!Number.isFinite(axisLength) || axisLength === 0) {
+      return Number.NaN;
+    }
+    return (
+      vector.x * axis.x
+      + vector.y * axis.y
+      + vector.z * axis.z
+    ) / axisLength;
+  }
+
   function resolveAttitudeConvention(attitudeSamples, localSamples) {
     const headingSamples = (localSamples || [])
       .map((sample) => ({ timestamp: normalizeTimestamp(sample), heading: toNumber(sample.heading) }))
@@ -417,6 +477,7 @@
     buildTrackSummary,
     normalizeLatLon,
     normalizeGlobalPoint,
+    computeRelativeMetrics,
     computeSightlineVector,
     quaternionToFrdAxes,
     resolveAttitudeConvention,
