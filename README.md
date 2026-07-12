@@ -14,6 +14,8 @@
 - 支持时间轴拖动，按时间渐进绘制两条轨迹
 - 在轨迹窗口左侧实时显示两机三维欧氏距离、NED 三轴投影，以及无人机 A 的 FRD 三轴投影
 - 在当前时间点显示无人机 A 的机体 FRD 坐标轴
+- 扩展工作区为左侧相对位置、中间轨迹、右侧姿态球；时间轴紧贴轨迹绘制区
+- 在右侧姿态球信息卡显示无人机 A 的滚转/俯仰/偏航角、视线角与机身俯仰角的代数和，以及 FRD 三轴角速度 roll/pitch/yaw
 - 支持为无人机 A 叠加一条可配置的机体系“视线”直线
 - 支持鼠标交互查看三维轨迹
 
@@ -70,12 +72,16 @@
 
 - 机体姿态由日志中的 `vehicle_attitude` 读取
 - 机体坐标轴方向基于日志数据确定
+- 姿态球的人工地平线由实时滚转角和俯仰角驱动，黄色航向指针由实时偏航角驱动
+- 姿态角以度（°）显示；FRD 角速度由 `vehicle_angular_velocity.xyz` 读取，按 roll/pitch/yaw 命名并转换为 °/s 显示
+- 姿态球信息卡中的“视线 + 俯仰”按当前输入的视线角与无人机 A 实时俯仰角直接相加，单位为 °
 
 ## 支持的 ULog topic
 
 - `vehicle_local_position`
 - `vehicle_global_position`
 - `vehicle_attitude`
+- `vehicle_angular_velocity`
 
 ## 本地运行
 
@@ -113,4 +119,3 @@ LogTools/
 ├─ tests/
 └─ ulogs/
 ```
-

@@ -23,7 +23,12 @@
     double: 8,
   };
 
-  const TARGET_TOPICS = ['vehicle_local_position', 'vehicle_global_position', 'vehicle_attitude'];
+  const TARGET_TOPICS = [
+    'vehicle_local_position',
+    'vehicle_global_position',
+    'vehicle_attitude',
+    'vehicle_angular_velocity',
+  ];
   const TEXT_DECODER = new TextDecoder('utf-8');
 
   function parseFormatDefinition(text) {
@@ -154,6 +159,7 @@
       vehicle_local_position: [],
       vehicle_global_position: [],
       vehicle_attitude: [],
+      vehicle_angular_velocity: [],
     };
     const allTopics = {};
     const warnings = [];
@@ -202,12 +208,14 @@
     const localRaw = collected.vehicle_local_position;
     const globalRaw = collected.vehicle_global_position;
     const attitudeRaw = collected.vehicle_attitude;
+    const angularVelocityRaw = collected.vehicle_angular_velocity;
     return {
       topics: buildTopicStatus(allTopics),
       topicNames: Object.keys(allTopics).sort(),
       localRaw,
       globalRaw,
       attitudeRaw,
+      angularVelocityRaw,
       localTrajectory: trajectory.normalizeLocalSamples(localRaw),
       globalTrajectory: trajectory.normalizeGlobalSamples(globalRaw),
       warnings,

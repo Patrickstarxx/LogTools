@@ -41,7 +41,7 @@ code {
 }
 
 .app-shell {
-  width: min(1180px, calc(100% - 32px));
+  width: min(2048px, calc(100% - 48px));
   margin: 0 auto;
   padding: 32px 0 44px;
 }
@@ -304,11 +304,265 @@ input[type="file"]::file-selector-button {
   background-size: 32px 32px;
 }
 
+.attitude-widget {
+  width: 100%;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid rgba(125, 211, 252, 0.32);
+  border-radius: 16px;
+  color: var(--text);
+  background:
+    linear-gradient(145deg, rgba(14, 165, 233, 0.18), rgba(7, 11, 19, 0.93) 46%),
+    rgba(7, 11, 19, 0.92);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(12px);
+}
+
+.attitude-widget[data-available="false"] {
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.attitude-widget-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.attitude-widget-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.attitude-units {
+  flex: 0 0 auto;
+  color: #bae6fd;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.attitude-widget-main {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+}
+
+.attitude-ball {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  overflow: hidden;
+  border: 2px solid rgba(224, 242, 254, 0.78);
+  border-radius: 50%;
+  background: #0b1829;
+  box-shadow: inset 0 0 22px rgba(14, 165, 233, 0.25), 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.attitude-ball::before,
+.attitude-ball::after {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  width: 13px;
+  height: 2px;
+  content: "";
+  background: #f8fafc;
+  transform: translateY(-50%);
+}
+
+.attitude-ball::before { left: 5px; }
+.attitude-ball::after { right: 5px; }
+
+.attitude-ball-face {
+  position: absolute;
+  inset: -60px;
+  overflow: hidden;
+  transform: rotate(0deg) translateY(0);
+  transform-origin: center;
+  transition: transform 100ms linear;
+  background: linear-gradient(to bottom, #0b4f79 0 50%, #7c3e20 50% 100%);
+}
+
+.attitude-ball-horizon {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.48);
+}
+
+.attitude-ball-pitch-tick {
+  position: absolute;
+  left: 50%;
+  width: 32px;
+  height: 1px;
+  background: rgba(248, 250, 252, 0.84);
+  transform: translateX(-50%);
+}
+
+.attitude-ball-pitch-tick::after {
+  position: absolute;
+  right: -13px;
+  top: -7px;
+  color: rgba(248, 250, 252, 0.85);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.tick-top { top: calc(50% - 18px); }
+.tick-top::after { content: "+20°"; }
+.tick-bottom { top: calc(50% + 18px); }
+.tick-bottom::after { content: "−20°"; }
+
+.attitude-ball-aircraft {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 2px;
+  background: #f8fafc;
+  box-shadow: 0 0 5px rgba(248, 250, 252, 0.65);
+  transform: translate(-50%, -50%);
+}
+
+.attitude-ball-aircraft::before,
+.attitude-ball-aircraft::after {
+  position: absolute;
+  top: 0;
+  width: 12px;
+  height: 8px;
+  content: "";
+  border-top: 2px solid #f8fafc;
+}
+
+.attitude-ball-aircraft::before { left: -3px; border-left: 2px solid #f8fafc; }
+.attitude-ball-aircraft::after { right: -3px; border-right: 2px solid #f8fafc; }
+
+.attitude-ball-yaw-needle {
+  position: absolute;
+  z-index: 3;
+  top: 5px;
+  left: 50%;
+  width: 2px;
+  height: 17px;
+  border-radius: 99px;
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.86);
+  transform: rotate(0deg);
+  transform-origin: 50% 45px;
+  transition: transform 100ms linear;
+}
+
+.attitude-ball-yaw-needle::after {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  content: "";
+  border-right: 4px solid transparent;
+  border-bottom: 7px solid #fbbf24;
+  border-left: 4px solid transparent;
+  transform: translateX(-50%);
+}
+
+.attitude-data-groups {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.attitude-value-group > p {
+  margin: 0 0 4px;
+  color: #bae6fd;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.attitude-value-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+.attitude-value-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  min-height: 20px;
+}
+
+.attitude-value-list dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.attitude-value-list dd { margin: 0; }
+
+.attitude-value-list output {
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.attitude-axis-tag {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 50%;
+  color: #07111f;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 900;
+}
+
+.attitude-axis-tag.angular-rate-tag {
+  width: 36px;
+  border-radius: 5px;
+  font-size: 9px;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+}
+
+.axis-roll { background: #f87171; }
+.axis-pitch { background: #4ade80; }
+.axis-yaw { color: #eff6ff; background: #3b82f6; }
+.axis-sightline { background: #fbbf24; }
+
+.attitude-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .trajectory-stage {
   display: grid;
-  grid-template-columns: minmax(230px, 260px) minmax(0, 1fr);
-  gap: 14px;
-  align-items: stretch;
+  grid-template-columns: minmax(250px, 280px) minmax(600px, 1fr) minmax(320px, 356px);
+  gap: 16px;
+  align-items: start;
+}
+
+.trajectory-main {
+  min-width: 0;
+}
+
+.trajectory-main .timeline-panel {
+  margin-top: 8px;
 }
 
 .relative-readout {
@@ -322,6 +576,28 @@ input[type="file"]::file-selector-button {
   background:
     linear-gradient(145deg, rgba(56, 189, 248, 0.09), transparent 42%),
     #070b13;
+}
+
+.relative-readout {
+  width: min(260px, 100%);
+  justify-self: start;
+}
+
+.trajectory-stage > .attitude-widget {
+  align-self: start;
+  justify-self: end;
+}
+
+@media (max-width: 1320px) {
+  .trajectory-stage {
+    grid-template-columns: minmax(230px, 260px) minmax(0, 1fr);
+  }
+
+  .trajectory-stage > .attitude-widget {
+    grid-column: 2;
+    width: min(356px, 100%);
+    justify-self: end;
+  }
 }
 
 .relative-readout-heading,
@@ -576,6 +852,13 @@ canvas {
     grid-template-columns: 1fr;
   }
 
+  .relative-readout,
+  .trajectory-stage > .attitude-widget {
+    width: 100%;
+    grid-column: auto;
+    justify-self: stretch;
+  }
+
   .relative-readout {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -588,7 +871,33 @@ canvas {
 }
 
 @media (max-width: 520px) {
+  .app-shell {
+    width: min(100% - 24px, 2048px);
+  }
+
   .relative-readout {
     display: flex;
+  }
+
+  .attitude-widget {
+    padding: 10px;
+  }
+
+  .attitude-widget-main {
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .attitude-ball {
+    width: 80px;
+    height: 80px;
+  }
+
+  .attitude-ball-yaw-needle {
+    transform-origin: 50% 35px;
+  }
+
+  .attitude-value-list output {
+    font-size: 10px;
   }
 }

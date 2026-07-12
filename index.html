@@ -122,22 +122,64 @@
 
             <p id="relativeReadoutHint" class="relative-readout-hint">加载两份日志后显示；投影为 B − A 的有符号距离。</p>
           </aside>
-          <div class="canvas-frame">
-            <canvas id="trajectoryCanvas" width="1200" height="720">
-              当前浏览器不支持 Canvas，无法显示三维轨迹。
-            </canvas>
-            <div id="emptyState" class="empty-state">选择两份日志后点击“解析并绘制”。</div>
+          <div class="trajectory-main">
+            <div class="canvas-frame">
+              <canvas id="trajectoryCanvas" width="1200" height="720">
+                当前浏览器不支持 Canvas，无法显示三维轨迹。
+              </canvas>
+              <div id="emptyState" class="empty-state">选择两份日志后点击“解析并绘制”。</div>
+            </div>
+            <div class="timeline-panel">
+              <div class="timeline-header">
+                <span>时间轴</span>
+                <output id="timeLabel">—</output>
+              </div>
+              <input id="timeSlider" type="range" min="0" max="0" step="0.001" value="0" disabled>
+              <p id="timelineHint">加载日志后可拖动时间轴，轨迹会随当前时间逐步绘制。</p>
+            </div>
+            <p id="hoverReadout" class="hover-readout">悬停轨迹点可查看时间与坐标。</p>
           </div>
-        </div>
-        <div class="timeline-panel">
-          <div class="timeline-header">
-            <span>时间轴</span>
-            <output id="timeLabel">—</output>
+          <aside id="attitudeWidget" class="attitude-widget" data-available="false" data-rate-available="false" aria-labelledby="attitude-widget-title">
+          <div class="attitude-widget-heading">
+            <div>
+              <p class="readout-eyebrow">无人机 A · FRD</p>
+              <h3 id="attitude-widget-title">姿态球</h3>
+            </div>
+            <span class="attitude-units">姿态 ° · 角速度 °/s</span>
           </div>
-          <input id="timeSlider" type="range" min="0" max="0" step="0.001" value="0" disabled>
-          <p id="timelineHint">加载日志后可拖动时间轴，轨迹会随当前时间逐步绘制。</p>
+          <div class="attitude-widget-main">
+            <div class="attitude-ball" aria-hidden="true">
+              <div id="attitudeBallFace" class="attitude-ball-face">
+                <span class="attitude-ball-horizon"></span>
+                <span class="attitude-ball-pitch-tick tick-top"></span>
+                <span class="attitude-ball-pitch-tick tick-bottom"></span>
+              </div>
+              <span class="attitude-ball-aircraft"></span>
+              <span id="attitudeYawNeedle" class="attitude-ball-yaw-needle"></span>
+            </div>
+            <div class="attitude-data-groups">
+              <section class="attitude-value-group" aria-label="姿态角">
+                <p>姿态角</p>
+                <dl class="attitude-value-list">
+                  <div><dt><i class="attitude-axis-tag axis-roll">φ</i>滚转</dt><dd><output id="rollAngle">—</output></dd></div>
+                  <div><dt><i class="attitude-axis-tag axis-pitch">θ</i>俯仰</dt><dd><output id="pitchAngle">—</output></dd></div>
+                  <div><dt><i class="attitude-axis-tag axis-yaw">ψ</i>偏航</dt><dd><output id="yawAngle">—</output></dd></div>
+                  <div><dt><i class="attitude-axis-tag axis-sightline">γ</i>视线 + 俯仰</dt><dd><output id="sightlinePitchAngle">—</output></dd></div>
+                </dl>
+              </section>
+              <section class="attitude-value-group" aria-label="FRD 角速度：roll、pitch、yaw">
+                <p>FRD 角速度</p>
+                <dl class="attitude-value-list">
+                  <div><dt><i class="attitude-axis-tag angular-rate-tag axis-roll">roll</i></dt><dd><output id="rollRate">—</output></dd></div>
+                  <div><dt><i class="attitude-axis-tag angular-rate-tag axis-pitch">pitch</i></dt><dd><output id="pitchRate">—</output></dd></div>
+                  <div><dt><i class="attitude-axis-tag angular-rate-tag axis-yaw">yaw</i></dt><dd><output id="yawRate">—</output></dd></div>
+                </dl>
+              </section>
+            </div>
+          </div>
+          <p id="attitudeHint" class="attitude-hint">等待无人机 A 的姿态与角速度数据。</p>
+          </aside>
         </div>
-        <p id="hoverReadout" class="hover-readout">悬停轨迹点可查看时间与坐标。</p>
       </section>
 
       <section class="note">

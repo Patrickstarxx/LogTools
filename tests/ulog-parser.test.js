@@ -77,9 +77,11 @@ test('synthetic ULog extracts local and global trajectories', () => {
   assert.equal(parsed.topics.vehicle_local_position.available, true);
   assert.equal(parsed.topics.vehicle_global_position.available, true);
   assert.equal(parsed.topics.vehicle_attitude.available, true);
+  assert.equal(parsed.topics.vehicle_angular_velocity.available, true);
   assert.equal(parsed.localTrajectory.points.length, 1);
   assert.equal(parsed.globalTrajectory.points.length, 1);
   assert.equal(parsed.attitudeRaw.length, 1);
+  assert.equal(parsed.angularVelocityRaw.length, 1);
   assert.deepEqual(parsed.localRaw[0], {
     timestamp: 1000000,
     x: 10,
@@ -95,6 +97,10 @@ test('synthetic ULog extracts local and global trajectories', () => {
   assert.deepEqual(parsed.attitudeRaw[0], {
     timestamp: 1000000,
     q: [1, 0, 0, 0],
+  });
+  assert.deepEqual(parsed.angularVelocityRaw[0], {
+    timestamp: 1000000,
+    xyz: [1.5, -2.5, 3.5],
   });
 });
 
@@ -117,6 +123,7 @@ function makeSyntheticUlog() {
   pushMessage(chunks, 'F', textBytes('vehicle_local_position:uint64_t timestamp;float x;float y;float z;'));
   pushMessage(chunks, 'F', textBytes('vehicle_global_position:uint64_t timestamp;int32_t lat;int32_t lon;int32_t alt;'));
   pushMessage(chunks, 'F', textBytes('vehicle_attitude:uint64_t timestamp;float[4] q;'));
+  pushMessage(chunks, 'F', textBytes('vehicle_angular_velocity:uint64_t timestamp;float[3] xyz;'));
 
   const addLocal = new Uint8Array(3 + 'vehicle_local_position'.length);
   let view = new DataView(addLocal.buffer);
@@ -138,6 +145,13 @@ function makeSyntheticUlog() {
   view.setUint16(1, 3, true);
   addAttitude.set(textBytes('vehicle_attitude'), 3);
   pushMessage(chunks, 'A', addAttitude);
+
+  const addAngularVelocity = new Uint8Array(3 + 'vehicle_angular_velocity'.length);
+  view = new DataView(addAngularVelocity.buffer);
+  view.setUint8(0, 0);
+  view.setUint16(1, 4, true);
+  addAngularVelocity.set(textBytes('vehicle_angular_velocity'), 3);
+  pushMessage(chunks, 'A', addAngularVelocity);
 
   const localData = new Uint8Array(2 + 20);
   view = new DataView(localData.buffer);
@@ -166,6 +180,15 @@ function makeSyntheticUlog() {
   view.setFloat32(18, 0, true);
   view.setFloat32(22, 0, true);
   pushMessage(chunks, 'D', attitudeData);
+
+  const angularVelocityData = new Uint8Array(2 + 20);
+  view = new DataView(angularVelocityData.buffer);
+  view.setUint16(0, 4, true);
+  view.setBigUint64(2, 1000000n, true);
+  view.setFloat32(10, 1.5, true);
+  view.setFloat32(14, -2.5, true);
+  view.setFloat32(18, 3.5, true);
+  pushMessage(chunks, 'D', angularVelocityData);
 
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const out = new Uint8Array(total);

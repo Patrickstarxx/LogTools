@@ -26,6 +26,27 @@
     return isFiniteNumber(timestamp) ? timestamp : 0;
   }
 
+  function normalizeFrdAngularVelocitySample(sample) {
+    if (!sample) {
+      return null;
+    }
+    const vector = Array.isArray(sample.xyz) || ArrayBuffer.isView(sample.xyz)
+      ? sample.xyz
+      : null;
+    const roll = toNumber(vector ? vector[0] : sample.x ?? sample.roll);
+    const pitch = toNumber(vector ? vector[1] : sample.y ?? sample.pitch);
+    const yaw = toNumber(vector ? vector[2] : sample.z ?? sample.yaw);
+    if (!isFiniteNumber(roll) || !isFiniteNumber(pitch) || !isFiniteNumber(yaw)) {
+      return null;
+    }
+    return {
+      t: normalizeTimestamp(sample),
+      roll,
+      pitch,
+      yaw,
+    };
+  }
+
   function normalizeLocalSamples(samples, originOffset = { x: 0, y: 0, z: 0 }) {
     const points = [];
     for (const sample of samples || []) {
@@ -215,11 +236,12 @@
     });
   }
 
-  function quaternionToFrdAxes(q, convention = 'body_to_ned') {
-    if (!Array.isArray(q) || q.length < 4) {
+  function normalizeBodyToNedQuaternion(q, convention = 'body_to_ned') {
+    const values = Array.isArray(q) || ArrayBuffer.isView(q) ? Array.from(q) : null;
+    if (!values || values.length < 4) {
       return null;
     }
-    let [w0, x0, y0, z0] = q.map(toNumber);
+    let [w0, x0, y0, z0] = values.map(toNumber);
     if (convention === 'ned_to_body') {
       x0 = -x0;
       y0 = -y0;
@@ -229,10 +251,34 @@
     if (!Number.isFinite(norm) || norm === 0) {
       return null;
     }
-    const w = w0 / norm;
-    const x = x0 / norm;
-    const y = y0 / norm;
-    const z = z0 / norm;
+    return {
+      w: w0 / norm,
+      x: x0 / norm,
+      y: y0 / norm,
+      z: z0 / norm,
+    };
+  }
+
+  function quaternionToEulerAngles(q, convention = 'body_to_ned') {
+    const quaternion = normalizeBodyToNedQuaternion(q, convention);
+    if (!quaternion) {
+      return null;
+    }
+    const { w, x, y, z } = quaternion;
+    const sinPitch = Math.max(-1, Math.min(1, 2 * (w * y - z * x)));
+    return {
+      roll: Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)),
+      pitch: Math.asin(sinPitch),
+      yaw: Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)),
+    };
+  }
+
+  function quaternionToFrdAxes(q, convention = 'body_to_ned') {
+    const quaternion = normalizeBodyToNedQuaternion(q, convention);
+    if (!quaternion) {
+      return null;
+    }
+    const { w, x, y, z } = quaternion;
 
     const rotate = (vector) => {
       const [vx, vy, vz] = vector;
@@ -471,6 +517,7 @@
     buildTimeRange,
     normalizeLocalSamples,
     normalizeGlobalSamples,
+    normalizeFrdAngularVelocitySample,
     chooseGlobalReference,
     computeLocalOriginOffsets,
     findNearestAtOrBefore,
@@ -479,6 +526,7 @@
     normalizeGlobalPoint,
     computeRelativeMetrics,
     computeSightlineVector,
+    quaternionToEulerAngles,
     quaternionToFrdAxes,
     resolveAttitudeConvention,
     countTrackPointsAtOrBefore,

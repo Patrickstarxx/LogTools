@@ -11,8 +11,10 @@ const {
   computeLocalOriginOffsets,
   computeRelativeMetrics,
   findNearestAtOrBefore,
+  normalizeFrdAngularVelocitySample,
   normalizeLatLon,
   computeSightlineVector,
+  quaternionToEulerAngles,
   quaternionToFrdAxes,
   resolveAttitudeConvention,
   sliceTrackAtTime,
@@ -178,6 +180,50 @@ test('identity quaternion maps FRD body axes into ENU plot coordinates', () => {
   assert.deepEqual(axes.down, { x: 0, y: 0, z: -1 });
 });
 
+test('identity quaternion maps to zero FRD attitude angles', () => {
+  assert.deepEqual(quaternionToEulerAngles([1, 0, 0, 0]), {
+    roll: 0,
+    pitch: 0,
+    yaw: 0,
+  });
+});
+
+test('FRD attitude quaternion maps aerospace roll pitch yaw with correct signs', () => {
+  const roll = 30 * Math.PI / 180;
+  const pitch = -20 * Math.PI / 180;
+  const yaw = 70 * Math.PI / 180;
+  const cy = Math.cos(yaw / 2);
+  const sy = Math.sin(yaw / 2);
+  const cp = Math.cos(pitch / 2);
+  const sp = Math.sin(pitch / 2);
+  const cr = Math.cos(roll / 2);
+  const sr = Math.sin(roll / 2);
+  const q = [
+    cr * cp * cy + sr * sp * sy,
+    sr * cp * cy - cr * sp * sy,
+    cr * sp * cy + sr * cp * sy,
+    cr * cp * sy - sr * sp * cy,
+  ];
+
+  const result = quaternionToEulerAngles(q);
+  assert.ok(Math.abs(result.roll - roll) < 1e-12);
+  assert.ok(Math.abs(result.pitch - pitch) < 1e-12);
+  assert.ok(Math.abs(result.yaw - yaw) < 1e-12);
+
+  const inverse = quaternionToEulerAngles(
+    new Float32Array([q[0], -q[1], -q[2], -q[3]]),
+    'ned_to_body',
+  );
+  assert.ok(Math.abs(inverse.roll - roll) < 1e-7);
+  assert.ok(Math.abs(inverse.pitch - pitch) < 1e-7);
+  assert.ok(Math.abs(inverse.yaw - yaw) < 1e-7);
+});
+
+test('FRD attitude conversion rejects malformed quaternions', () => {
+  assert.equal(quaternionToEulerAngles([1, 0, 0]), null);
+  assert.equal(quaternionToEulerAngles([0, 0, 0, 0]), null);
+});
+
 test('relative position metrics report B minus A in NED and drone A FRD axes', () => {
   const axes = quaternionToFrdAxes([1, 0, 0, 0]);
   const metrics = computeRelativeMetrics(
@@ -205,6 +251,27 @@ test('relative position metrics keep NED data when drone A attitude is unavailab
 
 test('relative position metrics reject incomplete positions', () => {
   assert.equal(computeRelativeMetrics({ x: 0, y: 0 }, { x: 1, y: 2, z: 3 }), null);
+});
+
+test('FRD angular velocity sample maps vehicle_angular_velocity.xyz into p q r', () => {
+  const result = normalizeFrdAngularVelocitySample({
+    timestamp: 1234,
+    xyz: [1.25, -2.5, 3.75],
+  });
+
+  assert.deepEqual(result, { t: 1234, roll: 1.25, pitch: -2.5, yaw: 3.75 });
+});
+
+test('FRD angular velocity sample supports scalar fallback fields', () => {
+  const result = normalizeFrdAngularVelocitySample({
+    timestamp_sample: 4321,
+    x: -0.1,
+    y: 0.2,
+    z: -0.3,
+  });
+
+  assert.deepEqual(result, { t: 4321, roll: -0.1, pitch: 0.2, yaw: -0.3 });
+  assert.equal(normalizeFrdAngularVelocitySample({ xyz: [1, 2] }), null);
 });
 
 test('sightline angle rotates from F toward minus D for positive angles', () => {

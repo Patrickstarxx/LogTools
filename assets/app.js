@@ -10,7 +10,9 @@
     findNearestAtOrBefore,
     computeSightlineVector,
     normalizeGlobalSamples,
+    normalizeFrdAngularVelocitySample,
     normalizeLocalSamples,
+    quaternionToEulerAngles,
     quaternionToFrdAxes,
     resolveAttitudeConvention,
   } = window.PX4Trajectory;
@@ -19,6 +21,8 @@
   const DRONE_A_LABEL = '无人机 A';
   const DRONE_B_LABEL = '无人机 B';
   const DEFAULT_SIGHTLINE_LENGTH = 5;
+  const ATTITUDE_BALL_MAX_PITCH_DEGREES = 45;
+  const ATTITUDE_BALL_MAX_PITCH_OFFSET_PX = 36;
 
   const elements = {
     fileA: document.getElementById('fileA'),
@@ -45,6 +49,17 @@
     frdRight: document.getElementById('frdRight'),
     frdDown: document.getElementById('frdDown'),
     relativeReadoutHint: document.getElementById('relativeReadoutHint'),
+    attitudeWidget: document.getElementById('attitudeWidget'),
+    attitudeBallFace: document.getElementById('attitudeBallFace'),
+    attitudeYawNeedle: document.getElementById('attitudeYawNeedle'),
+    rollAngle: document.getElementById('rollAngle'),
+    pitchAngle: document.getElementById('pitchAngle'),
+    yawAngle: document.getElementById('yawAngle'),
+    sightlinePitchAngle: document.getElementById('sightlinePitchAngle'),
+    rollRate: document.getElementById('rollRate'),
+    pitchRate: document.getElementById('pitchRate'),
+    yawRate: document.getElementById('yawRate'),
+    attitudeHint: document.getElementById('attitudeHint'),
   };
 
   const viewer = new TrajectoryViewer3D(elements.canvas, {
@@ -228,7 +243,7 @@
     elements.timeSlider.max = String(Math.max(0, range.durationUs / 1e6));
     elements.timeSlider.step = '0.01';
     elements.timeSlider.value = elements.timeSlider.max;
-    elements.timelineHint.textContent = '拖动时间轴，轨迹会绘制到当前时间；无人机 A 会显示当前 FRD 机体坐标轴。';
+    elements.timelineHint.textContent = '拖动时间轴，轨迹会绘制到当前时间；无人机 A 会同步显示 FRD 机体轴、姿态球和角速度。';
   }
 
   function disableTimeline() {
@@ -239,6 +254,7 @@
     elements.timeLabel.textContent = '—';
     elements.timelineHint.textContent = '加载日志后可拖动时间轴，轨迹会随当前时间逐步绘制。';
     resetRelativeReadout();
+    resetAttitudeWidget();
   }
 
   function renderCurrentTime() {
@@ -248,13 +264,15 @@
     const currentSeconds = (state.currentTimeUs - state.timeRange.startUs) / 1e6;
     elements.timeLabel.textContent = `${formatSeconds(currentSeconds)} / ${formatSeconds(state.timeRange.durationUs / 1e6)}`;
     const visibleCounts = state.renderTracks.map((track) => countTrackPointsAtOrBefore(track, state.currentTimeUs));
-    const axesA = getCurrentAxesA();
+    const attitudeA = getCurrentAttitudeA();
+    const axesA = attitudeA ? attitudeA.axes : null;
     viewer.setVisiblePointCounts(visibleCounts);
     viewer.setOverlays(
       buildCurrentMarkers(state.renderTracks, visibleCounts),
       buildBodyAxesOverlay(state.renderTracks, visibleCounts, axesA),
     );
     updateRelativeReadout(axesA);
+    updateAttitudeWidget(attitudeA);
   }
 
   function beginInteractiveRender() {
@@ -296,15 +314,28 @@
       .filter(Boolean);
   }
 
-  function getCurrentAxesA() {
+  function getCurrentAttitudeA() {
     const logA = state.parsedLogs.a;
     if (!logA || !logA.attitudeRaw || logA.attitudeRaw.length === 0) {
       return null;
     }
     const attitude = findNearestAtOrBefore(logA.attitudeRaw, state.currentTimeUs);
-    return attitude
-      ? quaternionToFrdAxes(attitude.q, state.attitudeConventionA.convention)
-      : null;
+    if (!attitude) {
+      return null;
+    }
+    const convention = state.attitudeConventionA.convention;
+    const axes = quaternionToFrdAxes(attitude.q, convention);
+    const euler = quaternionToEulerAngles(attitude.q, convention);
+    return axes && euler ? { axes, euler } : null;
+  }
+
+  function getCurrentAngularVelocityA() {
+    const logA = state.parsedLogs.a;
+    if (!logA || !logA.angularVelocityRaw || logA.angularVelocityRaw.length === 0) {
+      return null;
+    }
+    const sample = findNearestAtOrBefore(logA.angularVelocityRaw, state.currentTimeUs);
+    return normalizeFrdAngularVelocitySample(sample);
   }
 
   function buildBodyAxesOverlay(tracks, visibleCounts, axes) {
@@ -380,6 +411,85 @@
     elements.frdDown.textContent = '—';
   }
 
+  function updateAttitudeWidget(attitude) {
+    const angularVelocity = getCurrentAngularVelocityA();
+    const attitudeAvailable = Boolean(attitude && attitude.euler);
+    const rateAvailable = Boolean(angularVelocity);
+
+    elements.attitudeWidget.dataset.available = String(attitudeAvailable);
+    elements.attitudeWidget.dataset.rateAvailable = String(rateAvailable);
+
+    if (attitudeAvailable) {
+      const rollDegrees = radiansToDegrees(attitude.euler.roll);
+      const pitchDegrees = radiansToDegrees(attitude.euler.pitch);
+      const yawDegrees = radiansToDegrees(attitude.euler.yaw);
+      elements.rollAngle.textContent = formatAttitudeAngle(rollDegrees);
+      elements.pitchAngle.textContent = formatAttitudeAngle(pitchDegrees);
+      elements.yawAngle.textContent = formatAttitudeAngle(yawDegrees);
+      elements.sightlinePitchAngle.textContent = formatAttitudeAngle(
+        state.sightlineAngleDegrees + pitchDegrees,
+      );
+
+      // The aircraft symbol is fixed: positive roll rotates the horizon in the
+      // opposite direction, while positive pitch moves it down. Pitch travel is
+      // capped only for drawing so the exact value remains visible beside it.
+      const pitchOffset = clamp(
+        pitchDegrees / ATTITUDE_BALL_MAX_PITCH_DEGREES,
+        -1,
+        1,
+      ) * ATTITUDE_BALL_MAX_PITCH_OFFSET_PX;
+      elements.attitudeBallFace.style.transform = `rotate(${-rollDegrees}deg) translateY(${pitchOffset}px)`;
+      elements.attitudeYawNeedle.style.transform = `rotate(${yawDegrees}deg)`;
+    } else {
+      clearAttitudeAngles();
+      elements.attitudeBallFace.style.transform = 'rotate(0deg) translateY(0)';
+      elements.attitudeYawNeedle.style.transform = 'rotate(0deg)';
+    }
+
+    if (rateAvailable) {
+      elements.rollRate.textContent = formatAngularRate(angularVelocity.roll);
+      elements.pitchRate.textContent = formatAngularRate(angularVelocity.pitch);
+      elements.yawRate.textContent = formatAngularRate(angularVelocity.yaw);
+    } else {
+      clearAngularRates();
+    }
+
+    if (attitudeAvailable && rateAvailable) {
+      elements.attitudeHint.textContent = '球面由姿态角驱动；视线 + 俯仰为两者的代数和，角速度单位为 °/s。';
+    } else if (!attitudeAvailable && rateAvailable) {
+      elements.attitudeHint.textContent = '当前时刻缺少 vehicle_attitude；角速度可用，但无法驱动姿态球。';
+    } else if (attitudeAvailable) {
+      elements.attitudeHint.textContent = '姿态球已更新；当前时刻缺少 vehicle_angular_velocity。';
+    } else {
+      elements.attitudeHint.textContent = state.parsedLogs.a
+        ? '当前时刻缺少姿态与角速度数据。'
+        : '等待无人机 A 的姿态与角速度数据。';
+    }
+  }
+
+  function resetAttitudeWidget(hint = '等待无人机 A 的姿态与角速度数据。') {
+    clearAttitudeAngles();
+    clearAngularRates();
+    elements.attitudeWidget.dataset.available = 'false';
+    elements.attitudeWidget.dataset.rateAvailable = 'false';
+    elements.attitudeHint.textContent = hint;
+    elements.attitudeBallFace.style.transform = 'rotate(0deg) translateY(0)';
+    elements.attitudeYawNeedle.style.transform = 'rotate(0deg)';
+  }
+
+  function clearAttitudeAngles() {
+    elements.rollAngle.textContent = '—';
+    elements.pitchAngle.textContent = '—';
+    elements.yawAngle.textContent = '—';
+    elements.sightlinePitchAngle.textContent = '—';
+  }
+
+  function clearAngularRates() {
+    elements.rollRate.textContent = '—';
+    elements.pitchRate.textContent = '—';
+    elements.yawRate.textContent = '—';
+  }
+
   function renderPending(card, label, fileName) {
     card.innerHTML = `
       <h2>${escapeHtml(label)}</h2>
@@ -398,6 +508,7 @@
     const local = log.topics.vehicle_local_position;
     const global = log.topics.vehicle_global_position;
     const attitude = log.topics.vehicle_attitude || { available: false, samples: 0 };
+    const angularVelocity = log.topics.vehicle_angular_velocity || { available: false, samples: 0 };
     const summary = buildTrackSummary(track);
     const warningItems = [];
     if (log.warnings && log.warnings.length) {
@@ -407,7 +518,10 @@
       warningItems.push('缺少全球坐标，无法校正本地坐标原点，起点可能重合。');
     }
     if (label === DRONE_A_LABEL && !attitude.available) {
-      warningItems.push('缺少 vehicle_attitude，无法绘制机体 FRD 坐标轴。');
+      warningItems.push('缺少 vehicle_attitude，无法绘制机体 FRD 坐标轴或驱动姿态球。');
+    }
+    if (label === DRONE_A_LABEL && !angularVelocity.available) {
+      warningItems.push('缺少 vehicle_angular_velocity，无法显示 FRD 三轴角速度。');
     }
     if (label === DRONE_A_LABEL && attitude.available && attitudeConvention) {
       warningItems.push(`姿态约定：${attitudeConvention.convention}，依据：${attitudeConvention.source}。`);
@@ -428,6 +542,7 @@
         ${row('本地坐标 topic', badge(local.available, `${local.samples} 条`))}
         ${row('全球坐标 topic', badge(global.available, `${global.samples} 条`))}
         ${row('姿态 topic', badge(attitude.available, `${attitude.samples} 条`))}
+        ${row('角速度 topic', badge(angularVelocity.available, `${angularVelocity.samples} 条`))}
         ${row('当前模式', mode === 'local' ? '本地坐标' : '全球坐标')}
         ${row('采样点', pointStatus)}
         ${row('开始时间', formatSeconds(summary.startSeconds))}
@@ -464,6 +579,29 @@
     const normalized = Math.abs(value) < 0.0005 ? 0 : value;
     const sign = signed && normalized > 0 ? '+' : '';
     return `${sign}${normalized.toFixed(3)} m`;
+  }
+
+  function formatAngularRate(value) {
+    if (!Number.isFinite(value)) return '—';
+    const degreesPerSecond = radiansToDegrees(value);
+    const normalized = Math.abs(degreesPerSecond) < 0.05 ? 0 : degreesPerSecond;
+    const sign = normalized > 0 ? '+' : '';
+    return `${sign}${normalized.toFixed(2)} °/s`;
+  }
+
+  function radiansToDegrees(value) {
+    return Number.isFinite(value) ? value * 180 / Math.PI : Number.NaN;
+  }
+
+  function formatAttitudeAngle(value) {
+    if (!Number.isFinite(value)) return '—';
+    const normalized = Math.abs(value) < 0.05 ? 0 : value;
+    const sign = normalized > 0 ? '+' : '';
+    return `${sign}${normalized.toFixed(1)}°`;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
   }
 
   function parseSightlineAngle(value) {
